@@ -225,8 +225,8 @@ EOF
 }
 
 package_target() {
-    local package_name="partout-vendors-${target}.tar.zst"
-    tar --zstd -cf "${artifacts_dir}/${package_name}" -C "${package_root}" .
+    local package_name="partout-vendors-${target}.tar.gz"
+    tar -czf "${artifacts_dir}/${package_name}" -C "${package_root}" .
     shasum -a 256 "${artifacts_dir}/${package_name}" > "${artifacts_dir}/${package_name}.sha256"
 }
 

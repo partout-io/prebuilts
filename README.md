@@ -30,4 +30,4 @@ The current Android target is `arm64-v8a` only.
 
 `wg-go` is tracked directly in Partout rather than as a submodule, so its source revision is the pinned Partout commit. Its upstream WireGuard Go version is pinned in `vendors/wg-go/go.mod`.
 
-Tooling otherwise comes from the selected GitHub-hosted runner images, using their stable CMake, Ninja, MSVC, PowerShell, zstd, and Go toolchain cache.
+Tooling otherwise comes from the selected GitHub-hosted runner images, using their stable CMake, Ninja, MSVC, PowerShell, tar/gzip, and Go toolchain cache.
