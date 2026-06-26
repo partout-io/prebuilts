@@ -34,10 +34,14 @@ jobs:
       - name: Check out prebuilts
         uses: actions/checkout@v7
 
+      - name: Check out pinned Partout
+        run: scripts/checkout-partout.sh
+
       - name: Set up Go from runner image
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
+          cache-dependency-path: .build/partout/vendors/wg-go/go.sum
 
       - name: Select Android NDK
         if: startsWith(matrix.target, 'android-')
@@ -62,9 +66,6 @@ jobs:
           tar -xf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/llvm-mingw" --strip-components=1
           echo "LLVM_MINGW_ROOT=${RUNNER_TEMP}/llvm-mingw" >> "${GITHUB_ENV}"
           echo "${RUNNER_TEMP}/llvm-mingw/bin" >> "${GITHUB_PATH}"
-
-      - name: Check out pinned Partout
-        run: scripts/checkout-partout.sh
 
       - name: Build ${{ matrix.target }}
         run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
