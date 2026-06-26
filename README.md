@@ -21,10 +21,10 @@ Both workflows are manual (`workflow_dispatch`) while the packaging format is st
 | Mbed TLS | `v4.1.0` |
 | wg-go WireGuard module | `v0.0.0-20250521234502-f333402bd9cb` |
 | wxWidgets | `3.3.2` |
-| Go | `1.24.0` |
-| Android API | `24` |
-| Android NDK | `28.2.13676358` |
+| Android API | `28` |
+| Android NDK | `30.0.14904198` |
 | llvm-mingw | `20260616` |
 
 `wg-go` is tracked directly in Partout rather than as a submodule, so its source revision is the pinned Partout commit. Its upstream WireGuard Go version is pinned in `vendors/wg-go/go.mod`.
 
+Tooling otherwise comes from the selected GitHub-hosted runner images, using their stable CMake, Ninja, MSVC, PowerShell, zstd, and Go toolchain cache.

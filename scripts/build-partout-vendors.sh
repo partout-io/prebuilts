@@ -48,6 +48,25 @@ case "${target}" in
         ;;
 esac
 
+go_version="$(go env GOVERSION 2>/dev/null || go version)"
+cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
+ninja_version="$(ninja --version 2>/dev/null || true)"
+android_ndk_version=""
+
+if [[ "${os}" == "android" ]]; then
+    if [[ -n "${ANDROID_NDK_ROOT:-}" && -d "${ANDROID_NDK_ROOT}" ]]; then
+        :
+    elif [[ -n "${ANDROID_NDK_VERSION:-}" && -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" ]]; then
+        export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+    elif [[ -n "${ANDROID_NDK_LATEST_HOME:-}" && -d "${ANDROID_NDK_LATEST_HOME}" ]]; then
+        export ANDROID_NDK_ROOT="${ANDROID_NDK_LATEST_HOME}"
+    else
+        echo "Unable to resolve Android NDK. Set ANDROID_NDK_ROOT or ANDROID_NDK_LATEST_HOME." >&2
+        exit 1
+    fi
+    android_ndk_version="$(basename "${ANDROID_NDK_ROOT}")"
+fi
+
 rm -rf "${work_dir}" "${artifacts_dir}"
 mkdir -p "${package_root}" "${artifacts_dir}"
 
@@ -202,9 +221,11 @@ write_manifest() {
     }
   },
   "toolchains": {
-    "go": "${GO_VERSION}",
+    "go": "${go_version}",
+    "cmake": "${cmake_version}",
+    "ninja": "${ninja_version}",
     "androidApi": "${ANDROID_API:-}",
-    "androidNdk": "${ANDROID_NDK_VERSION:-}",
+    "androidNdk": "${android_ndk_version}",
     "llvmMingw": "${LLVM_MINGW_VERSION:-}"
   }
 }
@@ -222,4 +243,3 @@ build_mbedtls
 build_wg_go
 write_manifest
 package_target
-
