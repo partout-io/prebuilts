@@ -1,0 +1,43 @@
+name: Windows wxWidgets
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WXWIDGETS_VERSION: "3.3.2"
+  WXWIDGETS_SOURCE_SHA256: "f6a56de6d8fb55317230fba4ef64f81a646ad6f8c439d2710d98750493a8a569"
+  CMAKE_GENERATOR: Visual Studio 17 2022
+  MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
+
+jobs:
+  build:
+    name: ${{ matrix.arch }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            vc_arch: x64
+          - arch: arm64
+            cmake_arch: ARM64
+            vc_arch: arm64
+
+    steps:
+      - name: Check out prebuilts
+        uses: actions/checkout@v4
+
+      - name: Build wxWidgets
+        shell: pwsh
+        run: scripts/build-wxwidgets.ps1 -Arch "${{ matrix.arch }}" -CMakeArch "${{ matrix.cmake_arch }}" -VcArch "${{ matrix.vc_arch }}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: wxwidgets-windows-${{ matrix.arch }}
+          path: artifacts/*
+          if-no-files-found: error

@@ -1,0 +1,81 @@
+name: Linux Vendors
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
+  PARTOUT_REF: 2400fe52e036f0d10b5f1c105e044f77e296a54e
+  OPENSSL_VERSION: openssl-3.6.3
+  MBEDTLS_VERSION: v4.1.0
+  WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
+  GO_VERSION: "1.24.0"
+  ANDROID_API: "24"
+  ANDROID_NDK_VERSION: "28.2.13676358"
+  LLVM_MINGW_VERSION: "20260616"
+  LLVM_MINGW_FLAVOR: ucrt
+  LLVM_MINGW_HOST: ubuntu-22.04-x86_64
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - android-arm64-v8a
+          - android-x86_64
+          - windows-x64
+          - windows-arm64
+
+    steps:
+      - name: Check out prebuilts
+        uses: actions/checkout@v4
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build perl make git curl tar xz-utils zstd
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Android SDK
+        if: startsWith(matrix.target, 'android-')
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android NDK
+        if: startsWith(matrix.target, 'android-')
+        run: |
+          sdkmanager --install "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_ROOT=${ANDROID_SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Install pinned llvm-mingw
+        if: startsWith(matrix.target, 'windows-')
+        run: |
+          archive="llvm-mingw-${LLVM_MINGW_VERSION}-${LLVM_MINGW_FLAVOR}-${LLVM_MINGW_HOST}.tar.xz"
+          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${archive}"
+          curl -L "${url}" -o "${RUNNER_TEMP}/${archive}"
+          mkdir -p "${RUNNER_TEMP}/llvm-mingw"
+          tar -xf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/llvm-mingw" --strip-components=1
+          echo "LLVM_MINGW_ROOT=${RUNNER_TEMP}/llvm-mingw" >> "${GITHUB_ENV}"
+          echo "${RUNNER_TEMP}/llvm-mingw/bin" >> "${GITHUB_PATH}"
+
+      - name: Check out pinned Partout
+        run: scripts/checkout-partout.sh
+
+      - name: Build ${{ matrix.target }}
+        run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: partout-vendors-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
