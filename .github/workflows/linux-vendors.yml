@@ -27,7 +27,6 @@ jobs:
       matrix:
         target:
           - android-arm64-v8a
-          - android-x86_64
           - windows-x64
           - windows-arm64
 

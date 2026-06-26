@@ -10,6 +10,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$PSNativeCommandUseErrorActionPreference = $true
 
 $version = $env:WXWIDGETS_VERSION
 $sourceSha256 = $env:WXWIDGETS_SOURCE_SHA256
@@ -24,7 +25,7 @@ if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 $root = (Get-Location).Path
 $workDir = Join-Path $root ".build\wxwidgets-$Arch"
 $sourceZip = Join-Path $workDir "wxWidgets-$version.zip"
-$sourceDir = Join-Path $workDir "wxWidgets-$version"
+$sourceExtractDir = Join-Path $workDir "source"
 $buildDir = Join-Path $workDir "build"
 $installDir = Join-Path $workDir "package"
 $artifactsDir = Join-Path $root "artifacts"
@@ -42,7 +43,22 @@ if ($actualSha256 -ne $sourceSha256.ToLowerInvariant()) {
     throw "Expected wxWidgets SHA256 $sourceSha256, got $actualSha256"
 }
 
-Expand-Archive -Path $sourceZip -DestinationPath $workDir
+New-Item -ItemType Directory -Force $sourceExtractDir | Out-Null
+Expand-Archive -Path $sourceZip -DestinationPath $sourceExtractDir
+
+$rootCMakeLists = Join-Path $sourceExtractDir "CMakeLists.txt"
+if (Test-Path $rootCMakeLists) {
+    $sourceDir = $sourceExtractDir
+} else {
+    $sourceDir = Get-ChildItem -Path $sourceExtractDir -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName "CMakeLists.txt") } |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+if (-not $sourceDir) {
+    $entries = Get-ChildItem -Path $sourceExtractDir | Select-Object -First 20 -ExpandProperty Name
+    throw "Unable to locate extracted wxWidgets source root in $sourceExtractDir. Top-level entries: $($entries -join ', ')"
+}
 
 cmake `
     -S $sourceDir `

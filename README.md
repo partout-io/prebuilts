@@ -13,6 +13,8 @@ This repository builds binary dependencies used by Passepartout.
 
 All workflows are manual (`workflow_dispatch`) while the packaging format is still settling. Build workflows only upload GitHub Actions artifacts. The release workflow takes a required `release_tag`, optional build run IDs, and publishes the downloaded artifacts as release assets.
 
+The current Android target is `arm64-v8a` only.
+
 ## Current Pins
 
 | Component | Version / ref |

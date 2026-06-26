@@ -16,14 +16,6 @@ case "${target}" in
         android_goarch="arm64"
         android_clang_triple="aarch64-linux-android"
         ;;
-    android-x86_64)
-        os="android"
-        arch="x86_64"
-        openssl_target="android-x86_64"
-        android_abi="x86_64"
-        android_goarch="amd64"
-        android_clang_triple="x86_64-linux-android"
-        ;;
     windows-x64)
         os="windows"
         arch="x64"
