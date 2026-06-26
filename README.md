@@ -4,7 +4,7 @@ This repository builds binary dependencies used by Passepartout.
 
 ## Workflows
 
-- `Linux Vendors` builds Partout vendors from a pinned `partout-io/partout` checkout:
+- `Partout Vendors` builds Partout vendors from a pinned `partout-io/partout` checkout:
   - OpenSSL
   - Mbed TLS
   - wg-go

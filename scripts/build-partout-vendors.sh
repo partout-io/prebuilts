@@ -230,8 +230,59 @@ package_target() {
     shasum -a 256 "${artifacts_dir}/${package_name}" > "${artifacts_dir}/${package_name}.sha256"
 }
 
-build_openssl
+build_openssl_and_wg_go() {
+    local -a pids=()
+    local -a names=()
+
+    build_openssl &
+    pids+=("$!")
+    names+=("OpenSSL")
+
+    build_wg_go &
+    pids+=("$!")
+    names+=("wg-go")
+
+    while ((${#pids[@]} > 0)); do
+        local finished_pid=""
+        local finished_name="unknown"
+        local status=0
+
+        if wait -n -p finished_pid "${pids[@]}"; then
+            status=0
+        else
+            status=$?
+        fi
+
+        local -a remaining_pids=()
+        local -a remaining_names=()
+        for index in "${!pids[@]}"; do
+            if [[ "${pids[$index]}" == "${finished_pid}" ]]; then
+                finished_name="${names[$index]}"
+            else
+                remaining_pids+=("${pids[$index]}")
+                remaining_names+=("${names[$index]}")
+            fi
+        done
+
+        pids=("${remaining_pids[@]}")
+        names=("${remaining_names[@]}")
+
+        if ((status != 0)); then
+            echo "${finished_name} build failed with status ${status}" >&2
+            if ((${#pids[@]} > 0)); then
+                kill "${pids[@]}" 2>/dev/null || true
+                for pid in "${pids[@]}"; do
+                    wait "${pid}" 2>/dev/null || true
+                done
+            fi
+            return "${status}"
+        fi
+
+        echo "${finished_name} build completed"
+    done
+}
+
+build_openssl_and_wg_go
 build_mbedtls
-build_wg_go
 write_manifest
 package_target

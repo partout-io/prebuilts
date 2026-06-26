@@ -1,4 +1,4 @@
-name: Linux Vendors
+name: Partout Vendors
 
 on:
   workflow_dispatch:
