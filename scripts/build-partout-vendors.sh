@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-target="${1:?usage: build-partout-vendors.sh <target>}"
+target="${1:?usage: build-partout-vendors.sh <target> <vendor>}"
+vendor="${2:?usage: build-partout-vendors.sh <target> <vendor>}"
 partout_dir="${PARTOUT_DIR:-${PWD}/.build/partout}"
-work_dir="${PWD}/.build/${target}"
+work_dir="${PWD}/.build/${target}-${vendor}"
 package_root="${work_dir}/package"
 artifacts_dir="${PWD}/artifacts"
+
+case "${vendor}" in
+    openssl | mbedtls | wg-go)
+        ;;
+    *)
+        echo "Unknown vendor: ${vendor}" >&2
+        exit 1
+        ;;
+esac
 
 case "${target}" in
     android-arm64-v8a)
@@ -40,7 +50,10 @@ case "${target}" in
         ;;
 esac
 
-go_version="$(go env GOVERSION 2>/dev/null || go version)"
+go_version=""
+if command -v go >/dev/null 2>&1; then
+    go_version="$(go env GOVERSION 2>/dev/null || go version)"
+fi
 cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
 ninja_version="$(ninja --version 2>/dev/null || true)"
 android_ndk_version=""
@@ -187,10 +200,44 @@ EOF
 
 write_manifest() {
     local manifest="${package_root}/manifest.json"
+    local libraries_json
+
+    case "${vendor}" in
+        openssl)
+            libraries_json="$(cat <<EOF
+    "openssl": {
+      "version": "${OPENSSL_VERSION}",
+      "linkage": "shared"
+    }
+EOF
+)"
+            ;;
+        mbedtls)
+            libraries_json="$(cat <<EOF
+    "mbedtls": {
+      "version": "${MBEDTLS_VERSION}",
+      "linkage": "static"
+    }
+EOF
+)"
+            ;;
+        wg-go)
+            libraries_json="$(cat <<EOF
+    "wg-go": {
+      "partoutRef": "${PARTOUT_REF}",
+      "wireguardGoVersion": "${WIREGUARD_GO_VERSION}",
+      "linkage": "shared"
+    }
+EOF
+)"
+            ;;
+    esac
+
     cat > "${manifest}" <<EOF
 {
   "schemaVersion": 1,
   "target": "${target}",
+  "vendor": "${vendor}",
   "os": "${os}",
   "arch": "${arch}",
   "partout": {
@@ -198,19 +245,7 @@ write_manifest() {
     "ref": "${PARTOUT_REF}"
   },
   "libraries": {
-    "openssl": {
-      "version": "${OPENSSL_VERSION}",
-      "linkage": "shared"
-    },
-    "mbedtls": {
-      "version": "${MBEDTLS_VERSION}",
-      "linkage": "static"
-    },
-    "wg-go": {
-      "partoutRef": "${PARTOUT_REF}",
-      "wireguardGoVersion": "${WIREGUARD_GO_VERSION}",
-      "linkage": "shared"
-    }
+${libraries_json}
   },
   "toolchains": {
     "go": "${go_version}",
@@ -225,64 +260,21 @@ EOF
 }
 
 package_target() {
-    local package_name="partout-vendors-${target}.tar.gz"
+    local package_name="partout-vendors-${vendor}-${target}.tar.gz"
     tar -czf "${artifacts_dir}/${package_name}" -C "${package_root}" .
     shasum -a 256 "${artifacts_dir}/${package_name}" > "${artifacts_dir}/${package_name}.sha256"
 }
 
-build_openssl_and_wg_go() {
-    local -a pids=()
-    local -a names=()
-
-    build_openssl &
-    pids+=("$!")
-    names+=("OpenSSL")
-
-    build_wg_go &
-    pids+=("$!")
-    names+=("wg-go")
-
-    while ((${#pids[@]} > 0)); do
-        local finished_pid=""
-        local finished_name="unknown"
-        local status=0
-
-        if wait -n -p finished_pid "${pids[@]}"; then
-            status=0
-        else
-            status=$?
-        fi
-
-        local -a remaining_pids=()
-        local -a remaining_names=()
-        for index in "${!pids[@]}"; do
-            if [[ "${pids[$index]}" == "${finished_pid}" ]]; then
-                finished_name="${names[$index]}"
-            else
-                remaining_pids+=("${pids[$index]}")
-                remaining_names+=("${names[$index]}")
-            fi
-        done
-
-        pids=("${remaining_pids[@]}")
-        names=("${remaining_names[@]}")
-
-        if ((status != 0)); then
-            echo "${finished_name} build failed with status ${status}" >&2
-            if ((${#pids[@]} > 0)); then
-                kill "${pids[@]}" 2>/dev/null || true
-                for pid in "${pids[@]}"; do
-                    wait "${pid}" 2>/dev/null || true
-                done
-            fi
-            return "${status}"
-        fi
-
-        echo "${finished_name} build completed"
-    done
-}
-
-build_openssl_and_wg_go
-build_mbedtls
+case "${vendor}" in
+    openssl)
+        build_openssl
+        ;;
+    mbedtls)
+        build_mbedtls
+        ;;
+    wg-go)
+        build_wg_go
+        ;;
+esac
 write_manifest
 package_target

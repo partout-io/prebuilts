@@ -20,11 +20,15 @@ env:
 
 jobs:
   build:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.vendor }} / ${{ matrix.target }}
     runs-on: ubuntu-24.04
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
+        vendor:
+          - openssl
+          - mbedtls
+          - wg-go
         target:
           - android-arm64-v8a
           - windows-x64
@@ -38,6 +42,7 @@ jobs:
         run: scripts/checkout-partout.sh
 
       - name: Set up Go from runner image
+        if: matrix.vendor == 'wg-go'
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
@@ -67,12 +72,12 @@ jobs:
           echo "LLVM_MINGW_ROOT=${RUNNER_TEMP}/llvm-mingw" >> "${GITHUB_ENV}"
           echo "${RUNNER_TEMP}/llvm-mingw/bin" >> "${GITHUB_PATH}"
 
-      - name: Build ${{ matrix.target }}
-        run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
+      - name: Build ${{ matrix.vendor }} for ${{ matrix.target }}
+        run: scripts/build-partout-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
 
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:
-          name: partout-vendors-${{ matrix.target }}
+          name: partout-vendors-${{ matrix.vendor }}-${{ matrix.target }}
           path: artifacts/*
           if-no-files-found: error
