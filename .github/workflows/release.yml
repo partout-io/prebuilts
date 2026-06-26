@@ -1,0 +1,115 @@
+name: Release Prebuilts
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: GitHub Release tag to upload assets to.
+        required: true
+        type: string
+      prerelease:
+        description: Mark a newly created release as a prerelease.
+        required: true
+        default: true
+        type: boolean
+      linux_vendors_run_id:
+        description: Linux Vendors run ID. Leave blank for latest successful run.
+        required: false
+        type: string
+      windows_wxwidgets_run_id:
+        description: Windows wxWidgets run ID. Leave blank for latest successful run.
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    name: Release artifacts
+    runs-on: ubuntu-24.04
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Resolve build runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINUX_VENDORS_RUN_ID: ${{ inputs.linux_vendors_run_id }}
+          WINDOWS_WXWIDGETS_RUN_ID: ${{ inputs.windows_wxwidgets_run_id }}
+        run: |
+          set -euo pipefail
+
+          linux_run_id="${LINUX_VENDORS_RUN_ID}"
+          if [ -z "${linux_run_id}" ]; then
+            linux_run_id="$(gh run list --workflow linux-vendors.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+
+          windows_run_id="${WINDOWS_WXWIDGETS_RUN_ID}"
+          if [ -z "${windows_run_id}" ]; then
+            windows_run_id="$(gh run list --workflow windows-wxwidgets.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+
+          if [ -z "${linux_run_id}" ] || [ "${linux_run_id}" = "null" ]; then
+            echo "No Linux Vendors run ID provided and no successful Linux Vendors run found." >&2
+            exit 1
+          fi
+
+          if [ -z "${windows_run_id}" ] || [ "${windows_run_id}" = "null" ]; then
+            echo "No Windows wxWidgets run ID provided and no successful Windows wxWidgets run found." >&2
+            exit 1
+          fi
+
+          echo "LINUX_RUN_ID=${linux_run_id}" >> "${GITHUB_ENV}"
+          echo "WINDOWS_RUN_ID=${windows_run_id}" >> "${GITHUB_ENV}"
+          echo "Using Linux Vendors run ${linux_run_id}"
+          echo "Using Windows wxWidgets run ${windows_run_id}"
+
+      - name: Download build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/linux-vendors release-assets/windows-wxwidgets
+          gh run download "${LINUX_RUN_ID}" --dir release-assets/linux-vendors
+          gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
+          find release-assets -type f -print | sort
+
+      - name: Create release if needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists"
+            exit 0
+          fi
+
+          {
+            printf 'Passepartout prebuilts for %s.\n\n' "${RELEASE_TAG}"
+            printf 'Linux Vendors run: %s\n' "${LINUX_RUN_ID}"
+            printf 'Windows wxWidgets run: %s\n' "${WINDOWS_RUN_ID}"
+          } > release-notes.md
+
+          args=(--title "${RELEASE_TAG}" --notes-file release-notes.md)
+          if [ "${PRERELEASE}" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${RELEASE_TAG}" "${args[@]}" || gh release view "${RELEASE_TAG}" >/dev/null
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find release-assets -type f | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets found." >&2
+            exit 1
+          fi
+          gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber

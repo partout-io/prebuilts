@@ -9,8 +9,9 @@ This repository builds binary dependencies used by Passepartout.
   - Mbed TLS
   - wg-go
 - `Windows wxWidgets` builds static wxWidgets libraries with MSVC.
+- `Release Prebuilts` downloads artifacts from successful build workflow runs and uploads them to a GitHub Release.
 
-Both workflows are manual (`workflow_dispatch`) while the packaging format is still settling.
+All workflows are manual (`workflow_dispatch`) while the packaging format is still settling. Build workflows only upload GitHub Actions artifacts. The release workflow takes a required `release_tag`, optional build run IDs, and publishes the downloaded artifacts as release assets.
 
 ## Current Pins
 
