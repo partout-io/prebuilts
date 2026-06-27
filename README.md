@@ -13,7 +13,7 @@ This repository builds binary dependencies used by Passepartout and Partout.
 
 All workflows are manual (`workflow_dispatch`) while the packaging format is still settling. Build workflows only upload GitHub Actions artifacts. The release workflow takes a required `release_tag`, optional build run IDs, and publishes the downloaded artifacts as release assets.
 
-The current Android target is `arm64-v8a` only.
+The current Android target is `arm64-v8a` only. Windows OpenSSL and Mbed TLS are built on Windows with MSVC. Windows `wg-go` is the exception: it is built from Linux with llvm-mingw because Go's Windows C shared-library path is GNU-toolchain oriented.
 
 ## Version Pins
 

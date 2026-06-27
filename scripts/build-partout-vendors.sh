@@ -30,8 +30,6 @@ case "${target}" in
         os="windows"
         arch="x64"
         mingw_triple="x86_64-w64-mingw32"
-        openssl_target="mingw64"
-        cmake_processor="x86_64"
         goarch="amd64"
         dlltool_machine="i386:x86-64"
         ;;
@@ -39,8 +37,6 @@ case "${target}" in
         os="windows"
         arch="arm64"
         mingw_triple="aarch64-w64-mingw32"
-        openssl_target="mingwarm64"
-        cmake_processor="aarch64"
         goarch="arm64"
         dlltool_machine="arm64"
         ;;
@@ -102,10 +98,8 @@ build_openssl() {
         perl Configure "${openssl_target}" -D__ANDROID_API__="${ANDROID_API:?ANDROID_API is required}" \
             --prefix="${install_dir}" --openssldir="${install_dir}" --libdir=lib "${flags[@]}"
     else
-        local llvm_root="${LLVM_MINGW_ROOT:?LLVM_MINGW_ROOT is required}"
-        export PATH="${llvm_root}/bin:${PATH}"
-        CROSS_COMPILE="${mingw_triple}-" perl Configure "${openssl_target}" \
-            --prefix="${install_dir}" --openssldir="${install_dir}" --libdir=lib "${flags[@]}"
+        echo "Windows OpenSSL is built with MSVC by scripts/build-partout-vendors-windows.ps1." >&2
+        exit 1
     fi
 
     make "-j$(nproc)"
@@ -143,17 +137,8 @@ build_mbedtls() {
             -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
         )
     else
-        local toolchain_file="${work_dir}/llvm-mingw-${arch}.cmake"
-        cat > "${toolchain_file}" <<EOF
-set(CMAKE_SYSTEM_NAME Windows)
-set(CMAKE_SYSTEM_PROCESSOR ${cmake_processor})
-set(CMAKE_C_COMPILER "${LLVM_MINGW_ROOT:?LLVM_MINGW_ROOT is required}/bin/${mingw_triple}-clang")
-set(CMAKE_CXX_COMPILER "${LLVM_MINGW_ROOT}/bin/${mingw_triple}-clang++")
-set(CMAKE_RC_COMPILER "${LLVM_MINGW_ROOT}/bin/${mingw_triple}-windres")
-set(CMAKE_AR "${LLVM_MINGW_ROOT}/bin/llvm-ar")
-set(CMAKE_RANLIB "${LLVM_MINGW_ROOT}/bin/llvm-ranlib")
-EOF
-        cmake_args+=(-DCMAKE_TOOLCHAIN_FILE="${toolchain_file}")
+        echo "Windows Mbed TLS is built with MSVC by scripts/build-partout-vendors-windows.ps1." >&2
+        exit 1
     fi
 
     cmake "${cmake_args[@]}"

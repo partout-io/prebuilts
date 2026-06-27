@@ -17,28 +17,60 @@ env:
   LLVM_MINGW_VERSION: "20260616"
   LLVM_MINGW_FLAVOR: ucrt
   LLVM_MINGW_HOST: ubuntu-22.04-x86_64
+  CMAKE_GENERATOR: Visual Studio 17 2022
+  MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
 
 jobs:
   build:
     name: ${{ matrix.vendor }} / ${{ matrix.target }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
-        vendor:
-          - openssl
-          - mbedtls
-          - wg-go
-        target:
-          - android-arm64-v8a
-          - windows-x64
-          - windows-arm64
+        include:
+          - vendor: openssl
+            target: android-arm64-v8a
+            runner: ubuntu-24.04
+            build_host: linux
+          - vendor: mbedtls
+            target: android-arm64-v8a
+            runner: ubuntu-24.04
+            build_host: linux
+          - vendor: wg-go
+            target: android-arm64-v8a
+            runner: ubuntu-24.04
+            build_host: linux
+          - vendor: openssl
+            target: windows-x64
+            runner: windows-2022
+            build_host: windows
+          - vendor: mbedtls
+            target: windows-x64
+            runner: windows-2022
+            build_host: windows
+          - vendor: wg-go
+            target: windows-x64
+            runner: ubuntu-24.04
+            build_host: linux
+          - vendor: openssl
+            target: windows-arm64
+            runner: windows-2022
+            build_host: windows
+          - vendor: mbedtls
+            target: windows-arm64
+            runner: windows-2022
+            build_host: windows
+          - vendor: wg-go
+            target: windows-arm64
+            runner: ubuntu-24.04
+            build_host: linux
 
     steps:
       - name: Check out prebuilts
         uses: actions/checkout@v7
 
       - name: Check out pinned Partout
+        shell: bash
         run: scripts/checkout-partout.sh
 
       - name: Set up Go from runner image
@@ -62,7 +94,8 @@ jobs:
           echo "ANDROID_NDK_ROOT=${ndk_dir}" >> "${GITHUB_ENV}"
 
       - name: Install pinned llvm-mingw
-        if: startsWith(matrix.target, 'windows-')
+        if: matrix.vendor == 'wg-go' && startsWith(matrix.target, 'windows-')
+        shell: bash
         run: |
           archive="llvm-mingw-${LLVM_MINGW_VERSION}-${LLVM_MINGW_FLAVOR}-${LLVM_MINGW_HOST}.tar.xz"
           url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${archive}"
@@ -72,8 +105,15 @@ jobs:
           echo "LLVM_MINGW_ROOT=${RUNNER_TEMP}/llvm-mingw" >> "${GITHUB_ENV}"
           echo "${RUNNER_TEMP}/llvm-mingw/bin" >> "${GITHUB_PATH}"
 
-      - name: Build ${{ matrix.vendor }} for ${{ matrix.target }}
+      - name: Build Linux-hosted ${{ matrix.vendor }} for ${{ matrix.target }}
+        if: matrix.build_host == 'linux'
+        shell: bash
         run: scripts/build-partout-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
+
+      - name: Build Windows-hosted ${{ matrix.vendor }} for ${{ matrix.target }}
+        if: matrix.build_host == 'windows'
+        shell: pwsh
+        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}" -Vendor "${{ matrix.vendor }}"
 
       - name: Upload package
         uses: actions/upload-artifact@v7
