@@ -79,6 +79,10 @@ if (Test-Path $msbuild) {
 }
 
 $cmakeVersion = ((& cmake --version) | Select-Object -First 1) -replace "^cmake version ", ""
+$nasmVersion = ""
+if (Get-Command nasm -ErrorAction SilentlyContinue) {
+    $nasmVersion = ((& nasm -v) | Select-Object -First 1).Trim()
+}
 
 Remove-Item -Recurse -Force $workDir, $artifactsDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $packageRoot | Out-Null
@@ -233,6 +237,7 @@ function Write-Manifest {
             visualStudio = $visualStudioPath
             vcTools = $vcToolsVersion
             msbuild = $msbuildVersion
+            nasm = $nasmVersion
             msvcRuntimeLibrary = $runtimeLibrary
             cmakeGenerator = $generator
             cmakeArch = $cmakeArch
