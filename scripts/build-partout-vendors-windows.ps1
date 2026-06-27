@@ -178,6 +178,21 @@ function Build-MbedTLS {
     $buildDir = Join-Path $workDir "mbedtls-build"
     $installDir = Join-Path $packageRoot "mbedtls"
 
+    python -m pip install --user --disable-pip-version-check -r (Join-Path $sourceDir "scripts\basic.requirements.txt")
+    Push-Location (Join-Path $sourceDir "tf-psa-crypto")
+    try {
+        python "framework\scripts\make_generated_files.py"
+    } finally {
+        Pop-Location
+    }
+
+    Push-Location $sourceDir
+    try {
+        python "scripts\make_generated_files.py"
+    } finally {
+        Pop-Location
+    }
+
     cmake `
         -S $sourceDir `
         -B $buildDir `

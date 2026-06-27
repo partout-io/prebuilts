@@ -130,6 +130,10 @@ build_mbedtls() {
         -DENABLE_PROGRAMS=OFF
     )
 
+    python3 -m pip install --user --disable-pip-version-check -r "${source_dir}/scripts/basic.requirements.txt"
+    (cd "${source_dir}/tf-psa-crypto" && python3 framework/scripts/make_generated_files.py)
+    (cd "${source_dir}" && python3 scripts/make_generated_files.py)
+
     if [[ "${os}" == "android" ]]; then
         cmake_args+=(
             -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}/build/cmake/android.toolchain.cmake"
