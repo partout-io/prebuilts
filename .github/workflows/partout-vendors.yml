@@ -68,7 +68,9 @@ jobs:
             if [ -z "${sdkmanager_bin}" ]; then
               sdkmanager_bin="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
             fi
+            set +o pipefail
             yes | "${sdkmanager_bin}" --install "ndk;${ANDROID_NDK_VERSION}"
+            set -o pipefail
           fi
           echo "ANDROID_NDK_ROOT=${ndk_dir}" >> "${GITHUB_ENV}"
 
