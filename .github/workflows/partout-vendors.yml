@@ -8,7 +8,7 @@ permissions:
 
 env:
   PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
-  PARTOUT_REF: 578c061f75bcdf5d3d5e3d779e206943355dffcd
+  PARTOUT_REF: 8139a5ea9a06f04b7cc80203cad353983126efdc
   OPENSSL_VERSION: openssl-3.6.3
   MBEDTLS_VERSION: v4.1.0
   WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
@@ -117,8 +117,6 @@ jobs:
           }
 
           "LLVM_MINGW_ROOT=$toolRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $binDir = Join-Path $toolRoot "bin"
-          Add-Content -Path $env:GITHUB_PATH -Value $binDir
           & $clang --version
 
       - name: Save llvm-mingw cache
