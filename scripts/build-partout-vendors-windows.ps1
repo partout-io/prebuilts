@@ -208,9 +208,15 @@ function Build-MbedTLS {
 
     cmake --build $buildDir --target install --config Release --parallel
 
+    $mbedcryptoLib = Join-Path $installDir "lib\mbedcrypto.lib"
+    $mbedcryptoArchive = Join-Path $installDir "lib\libmbedcrypto.a"
+    if ((-not (Test-Path $mbedcryptoLib)) -and (Test-Path $mbedcryptoArchive)) {
+        Copy-Item -Force $mbedcryptoArchive $mbedcryptoLib
+    }
+
     Assert-PathExists (Join-Path $installDir "lib\mbedtls.lib")
     Assert-PathExists (Join-Path $installDir "lib\mbedx509.lib")
-    Assert-PathExists (Join-Path $installDir "lib\mbedcrypto.lib")
+    Assert-PathExists $mbedcryptoLib
 }
 
 function Write-Manifest {
