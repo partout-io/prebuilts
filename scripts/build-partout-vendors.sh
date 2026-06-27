@@ -148,4 +148,7 @@ cat > "${install_dir}/manifest.json" <<EOF
 EOF
 
 package_name="partout-vendors-${target}.tar.gz"
-tar -czf "${artifacts_dir}/${package_name}" -C "${install_dir}" .
+package_path="${artifacts_dir}/${package_name}"
+tar -czf "${package_path}" -C "${install_dir}" .
+sha256="$(shasum -a 256 "${package_path}" | awk '{print $1}')"
+printf "%s  %s\n" "${sha256}" "${package_name}" > "${package_path}.sha256"

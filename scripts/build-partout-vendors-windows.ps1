@@ -254,3 +254,6 @@ New-Manifest
 $packageName = "partout-vendors-$Target.zip"
 $packagePath = Join-Path $artifactsDir $packageName
 Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $packagePath -Force
+
+$sha256 = (Get-FileHash -Algorithm SHA256 $packagePath).Hash.ToLowerInvariant()
+"$sha256  $packageName" | Set-Content -Encoding ASCII "$packagePath.sha256"
