@@ -1,6 +1,6 @@
-# Passepartout Prebuilts
+# Prebuilts
 
-This repository builds binary dependencies used by Passepartout.
+This repository builds binary dependencies used by Passepartout and Partout.
 
 ## Workflows
 
