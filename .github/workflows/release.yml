@@ -89,7 +89,7 @@ jobs:
           fi
 
           {
-            printf 'Passepartout prebuilts for %s.\n\n' "${RELEASE_TAG}"
+            printf 'Prebuilts for %s.\n\n' "${RELEASE_TAG}"
             printf 'Partout Vendors run: %s\n' "${PARTOUT_RUN_ID}"
             printf 'Windows wxWidgets run: %s\n' "${WINDOWS_RUN_ID}"
           } > release-notes.md
