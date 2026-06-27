@@ -29,6 +29,7 @@ $root = (Get-Location).Path
 $partoutDir = Join-Path $root ".build\partout"
 $workDir = Join-Path $root ".build\$Target"
 $buildDir = Join-Path $workDir "cmake-build"
+$vendorOutputDir = Join-Path $workDir "vendor-output"
 $installDir = Join-Path $workDir "install"
 $packageDir = Join-Path $workDir "packages"
 $artifactsDir = Join-Path $root "artifacts"
@@ -96,7 +97,7 @@ if (Get-Command nasm -ErrorAction SilentlyContinue) {
 }
 
 Remove-Item -Recurse -Force $workDir, $artifactsDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $buildDir, $installDir, $packageDir, $artifactsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildDir, $vendorOutputDir, $installDir, $packageDir, $artifactsDir | Out-Null
 
 function ConvertTo-CmdArgument {
     param(
@@ -155,7 +156,7 @@ $cmakeArgs = @(
     "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
     "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary",
     "-DCMAKE_SYSTEM_PROCESSOR=$cmakeProcessor",
-    "-DPP_BUILD_OUTPUT=$installDir",
+    "-DPP_BUILD_OUTPUT=$vendorOutputDir",
     "-DPP_BUILD_LIBRARY=OFF",
     "-DPP_BUILD_VENDOR_SOURCE=bundled",
     "-DPP_BUILD_USE_OPENSSL=ON",

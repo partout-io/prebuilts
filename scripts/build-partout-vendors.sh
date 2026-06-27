@@ -5,6 +5,7 @@ target="${1:?usage: build-partout-vendors.sh <target>}"
 partout_dir="${PARTOUT_DIR:-${PWD}/.build/partout}"
 work_dir="${PWD}/.build/${target}"
 build_dir="${work_dir}/cmake-build"
+vendor_output_dir="${work_dir}/vendor-output"
 install_dir="${work_dir}/install"
 package_dir="${work_dir}/packages"
 artifacts_dir="${PWD}/artifacts"
@@ -51,7 +52,7 @@ if [[ "${os}" == "android" ]]; then
 fi
 
 rm -rf "${work_dir}" "${artifacts_dir}"
-mkdir -p "${build_dir}" "${install_dir}" "${package_dir}" "${artifacts_dir}"
+mkdir -p "${build_dir}" "${vendor_output_dir}" "${install_dir}" "${package_dir}" "${artifacts_dir}"
 
 cmake_args=(
     -S "${partout_dir}"
@@ -59,7 +60,7 @@ cmake_args=(
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_INSTALL_PREFIX="${install_dir}"
-    -DPP_BUILD_OUTPUT="${install_dir}"
+    -DPP_BUILD_OUTPUT="${vendor_output_dir}"
     -DPP_BUILD_LIBRARY=OFF
     -DPP_BUILD_VENDOR_SOURCE=bundled
     -DPP_BUILD_USE_OPENSSL=ON
