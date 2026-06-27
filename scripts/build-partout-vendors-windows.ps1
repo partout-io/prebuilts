@@ -31,7 +31,6 @@ $workDir = Join-Path $root ".build\$Target"
 $buildDir = Join-Path $workDir "cmake-build"
 $vendorOutputDir = Join-Path $workDir "vendor-output"
 $installDir = Join-Path $workDir "install"
-$packageDir = Join-Path $workDir "packages"
 $artifactsDir = Join-Path $root "artifacts"
 $vendors = @("openssl", "mbedtls", "wg-go")
 
@@ -97,7 +96,7 @@ if (Get-Command nasm -ErrorAction SilentlyContinue) {
 }
 
 Remove-Item -Recurse -Force $workDir, $artifactsDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path $buildDir, $vendorOutputDir, $installDir, $packageDir, $artifactsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildDir, $vendorOutputDir, $installDir, $artifactsDir | Out-Null
 
 function ConvertTo-CmdArgument {
     param(
@@ -202,44 +201,24 @@ function Assert-VendorPackage {
 }
 
 function New-Manifest {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Vendor,
-
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
     $libraries = [ordered]@{}
-    switch ($Vendor) {
-        "openssl" {
-            $libraries["openssl"] = [ordered]@{
-                version = $opensslVersion
-                linkage = "shared"
-            }
-        }
-        "mbedtls" {
-            $libraries["mbedtls"] = [ordered]@{
-                version = $mbedtlsVersion
-                linkage = "static"
-            }
-        }
-        "wg-go" {
-            $libraries["wg-go"] = [ordered]@{
-                partoutRef = $partoutRef
-                wireguardGoVersion = $wireGuardGoVersion
-                linkage = "shared"
-            }
-        }
-        default {
-            throw "Unknown vendor: $Vendor"
-        }
+    $libraries["openssl"] = [ordered]@{
+        version = $opensslVersion
+        linkage = "shared"
+    }
+    $libraries["mbedtls"] = [ordered]@{
+        version = $mbedtlsVersion
+        linkage = "static"
+    }
+    $libraries["wg-go"] = [ordered]@{
+        partoutRef = $partoutRef
+        wireguardGoVersion = $wireGuardGoVersion
+        linkage = "shared"
     }
 
     $manifest = [ordered]@{
         schemaVersion = 1
         target = $Target
-        vendor = $Vendor
         os = "windows"
         arch = $arch
         partout = [ordered]@{
@@ -263,31 +242,15 @@ function New-Manifest {
         }
     }
 
-    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $Path
-}
-
-function New-Package {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Vendor
-    )
-
-    Assert-VendorPackage -Vendor $Vendor
-
-    $stagingDir = Join-Path $packageDir $Vendor
-    Remove-Item -Recurse -Force $stagingDir -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force $stagingDir | Out-Null
-    Copy-Item -Recurse -Force (Join-Path $installDir $Vendor) (Join-Path $stagingDir $Vendor)
-    New-Manifest -Vendor $Vendor -Path (Join-Path $stagingDir "manifest.json")
-
-    $packageName = "partout-vendors-$Vendor-$Target.tar.gz"
-    $packagePath = Join-Path $artifactsDir $packageName
-    tar -czf $packagePath -C $stagingDir .
-
-    $sha256 = (Get-FileHash -Algorithm SHA256 $packagePath).Hash.ToLowerInvariant()
-    "$sha256  $packageName" | Set-Content -Encoding ASCII "$packagePath.sha256"
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $installDir "manifest.json")
 }
 
 foreach ($vendor in $vendors) {
-    New-Package -Vendor $vendor
+    Assert-VendorPackage -Vendor $vendor
 }
+
+New-Manifest
+
+$packageName = "partout-vendors-$Target.zip"
+$packagePath = Join-Path $artifactsDir $packageName
+Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $packagePath -Force

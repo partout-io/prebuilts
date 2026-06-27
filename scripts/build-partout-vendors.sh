@@ -7,7 +7,6 @@ work_dir="${PWD}/.build/${target}"
 build_dir="${work_dir}/cmake-build"
 vendor_output_dir="${work_dir}/vendor-output"
 install_dir="${work_dir}/install"
-package_dir="${work_dir}/packages"
 artifacts_dir="${PWD}/artifacts"
 vendors=(openssl mbedtls wg-go)
 
@@ -52,7 +51,7 @@ if [[ "${os}" == "android" ]]; then
 fi
 
 rm -rf "${work_dir}" "${artifacts_dir}"
-mkdir -p "${build_dir}" "${vendor_output_dir}" "${install_dir}" "${package_dir}" "${artifacts_dir}"
+mkdir -p "${build_dir}" "${vendor_output_dir}" "${install_dir}" "${artifacts_dir}"
 
 cmake_args=(
     -S "${partout_dir}"
@@ -109,51 +108,14 @@ assert_vendor_package() {
     esac
 }
 
-write_manifest() {
-    local vendor="${1}"
-    local manifest="${2}"
-    local libraries_json
+for vendor in "${vendors[@]}"; do
+    assert_vendor_package "${vendor}"
+done
 
-    case "${vendor}" in
-        openssl)
-            libraries_json="$(cat <<EOF
-    "openssl": {
-      "version": "${OPENSSL_VERSION}",
-      "linkage": "shared"
-    }
-EOF
-)"
-            ;;
-        mbedtls)
-            libraries_json="$(cat <<EOF
-    "mbedtls": {
-      "version": "${MBEDTLS_VERSION}",
-      "linkage": "static"
-    }
-EOF
-)"
-            ;;
-        wg-go)
-            libraries_json="$(cat <<EOF
-    "wg-go": {
-      "partoutRef": "${PARTOUT_REF}",
-      "wireguardGoVersion": "${WIREGUARD_GO_VERSION}",
-      "linkage": "shared"
-    }
-EOF
-)"
-            ;;
-        *)
-            echo "Unknown vendor: ${vendor}" >&2
-            exit 1
-            ;;
-    esac
-
-    cat > "${manifest}" <<EOF
+cat > "${install_dir}/manifest.json" <<EOF
 {
   "schemaVersion": 1,
   "target": "${target}",
-  "vendor": "${vendor}",
   "os": "${os}",
   "arch": "${arch}",
   "partout": {
@@ -161,7 +123,19 @@ EOF
     "ref": "${PARTOUT_REF}"
   },
   "libraries": {
-${libraries_json}
+    "openssl": {
+      "version": "${OPENSSL_VERSION}",
+      "linkage": "shared"
+    },
+    "mbedtls": {
+      "version": "${MBEDTLS_VERSION}",
+      "linkage": "static"
+    },
+    "wg-go": {
+      "partoutRef": "${PARTOUT_REF}",
+      "wireguardGoVersion": "${WIREGUARD_GO_VERSION}",
+      "linkage": "shared"
+    }
   },
   "toolchains": {
     "go": "${go_version}",
@@ -172,23 +146,6 @@ ${libraries_json}
   }
 }
 EOF
-}
 
-package_vendor() {
-    local vendor="${1}"
-    local staging_dir="${package_dir}/${vendor}"
-    local package_name="partout-vendors-${vendor}-${target}.tar.gz"
-
-    assert_vendor_package "${vendor}"
-    rm -rf "${staging_dir}"
-    mkdir -p "${staging_dir}"
-    cp -a "${install_dir}/${vendor}" "${staging_dir}/${vendor}"
-    write_manifest "${vendor}" "${staging_dir}/manifest.json"
-
-    tar -czf "${artifacts_dir}/${package_name}" -C "${staging_dir}" .
-    shasum -a 256 "${artifacts_dir}/${package_name}" > "${artifacts_dir}/${package_name}.sha256"
-}
-
-for vendor in "${vendors[@]}"; do
-    package_vendor "${vendor}"
-done
+package_name="partout-vendors-${target}.tar.gz"
+tar -czf "${artifacts_dir}/${package_name}" -C "${install_dir}" .
