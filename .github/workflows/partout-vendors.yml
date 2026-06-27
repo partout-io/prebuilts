@@ -2,13 +2,24 @@ name: Partout Vendors
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Target to build
+        required: false
+        type: choice
+        default: all
+        options:
+          - all
+          - android-arm64-v8a
+          - windows-x64
+          - windows-arm64
 
 permissions:
   contents: read
 
 env:
   PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
-  PARTOUT_REF: 8139a5ea9a06f04b7cc80203cad353983126efdc
+  PARTOUT_REF: 81818bc13fcc7fcfde95b63edc539b45f1961401
   OPENSSL_VERSION: openssl-3.6.3
   MBEDTLS_VERSION: v4.1.0
   WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
@@ -21,28 +32,49 @@ env:
   NASM_SOURCE_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
 
 jobs:
+  select-matrix:
+    name: Select matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Select target matrix
+        id: matrix
+        shell: bash
+        run: |
+          target="${{ inputs.target }}"
+          if [ -z "${target}" ]; then
+            target="all"
+          fi
+
+          case "${target}" in
+            all)
+              matrix='{"include":[{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux"},{"target":"windows-x64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"},{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"}]}'
+              ;;
+            android-arm64-v8a)
+              matrix='{"include":[{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux"}]}'
+              ;;
+            windows-x64)
+              matrix='{"include":[{"target":"windows-x64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"}]}'
+              ;;
+            windows-arm64)
+              matrix='{"include":[{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"}]}'
+              ;;
+            *)
+              echo "Unknown target: ${target}" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+
   build:
     name: ${{ matrix.target }}
+    needs: select-matrix
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
-      matrix:
-        include:
-          - target: android-arm64-v8a
-            runner: ubuntu-24.04
-            build_host: linux
-          - target: windows-x64
-            runner: windows-2022
-            build_host: windows
-            llvm_mingw_host_arch: x86_64
-            llvm_mingw_triple: x86_64-w64-mingw32
-            llvm_mingw_sha256: b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35
-          - target: windows-arm64
-            runner: windows-2022
-            build_host: windows
-            llvm_mingw_host_arch: x86_64
-            llvm_mingw_triple: aarch64-w64-mingw32
-            llvm_mingw_sha256: b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35
+      matrix: ${{ fromJSON(needs.select-matrix.outputs.matrix) }}
 
     steps:
       - name: Check out prebuilts
