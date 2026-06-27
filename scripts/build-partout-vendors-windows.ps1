@@ -12,6 +12,8 @@ $partoutRef = $env:PARTOUT_REF
 $opensslVersion = $env:OPENSSL_VERSION
 $mbedtlsVersion = $env:MBEDTLS_VERSION
 $wireGuardGoVersion = $env:WIREGUARD_GO_VERSION
+$llvmMingwVersion = $env:LLVM_MINGW_VERSION
+$llvmMingwRoot = $env:LLVM_MINGW_ROOT
 $runtimeLibrary = $env:MSVC_RUNTIME_LIBRARY
 
 if (-not $partoutRepository) { throw "PARTOUT_REPOSITORY is required" }
@@ -19,6 +21,8 @@ if (-not $partoutRef) { throw "PARTOUT_REF is required" }
 if (-not $opensslVersion) { throw "OPENSSL_VERSION is required" }
 if (-not $mbedtlsVersion) { throw "MBEDTLS_VERSION is required" }
 if (-not $wireGuardGoVersion) { throw "WIREGUARD_GO_VERSION is required" }
+if (-not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required" }
+if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required" }
 if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 
 $root = (Get-Location).Path
@@ -246,6 +250,8 @@ function New-Manifest {
             go = $goVersion
             cmake = $cmakeVersion
             ninja = $ninjaVersion
+            llvmMingw = $llvmMingwVersion
+            llvmMingwRoot = $llvmMingwRoot
             visualStudio = $visualStudioPath
             vcTools = $vcToolsVersion
             msbuild = $msbuildVersion

@@ -8,12 +8,14 @@ permissions:
 
 env:
   PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
-  PARTOUT_REF: 4a18e288eac01a659d11cafa7e848c0950fed8dc
+  PARTOUT_REF: 578c061f75bcdf5d3d5e3d779e206943355dffcd
   OPENSSL_VERSION: openssl-3.6.3
   MBEDTLS_VERSION: v4.1.0
   WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
   ANDROID_API: "28"
   ANDROID_NDK_VERSION: "30.0.14904198"
+  LLVM_MINGW_VERSION: "20260616"
+  LLVM_MINGW_FLAVOR: ucrt
   MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
   NASM_VERSION: "3.01"
   NASM_SOURCE_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
@@ -32,9 +34,15 @@ jobs:
           - target: windows-x64
             runner: windows-2022
             build_host: windows
+            llvm_mingw_arch: x86_64
+            llvm_mingw_triple: x86_64-w64-mingw32
+            llvm_mingw_sha256: b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35
           - target: windows-arm64
             runner: windows-2022
             build_host: windows
+            llvm_mingw_arch: aarch64
+            llvm_mingw_triple: aarch64-w64-mingw32
+            llvm_mingw_sha256: 312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba
 
     steps:
       - name: Check out prebuilts
@@ -63,6 +71,60 @@ jobs:
             yes | "${sdkmanager_bin}" --install "ndk;${ANDROID_NDK_VERSION}"
           fi
           echo "ANDROID_NDK_ROOT=${ndk_dir}" >> "${GITHUB_ENV}"
+
+      - name: Restore llvm-mingw cache
+        id: llvm-mingw-cache
+        if: matrix.build_host == 'windows'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_arch }}
+          key: llvm-mingw-windows-${{ matrix.target }}-${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_sha256 }}
+
+      - name: Set up llvm-mingw for wg-go
+        if: matrix.build_host == 'windows'
+        shell: pwsh
+        run: |
+          $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_arch }}.zip"
+          $toolRoot = Join-Path (Join-Path $env:RUNNER_TOOL_CACHE "llvm-mingw") "$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_arch }}"
+          $clang = Join-Path $toolRoot "bin\${{ matrix.llvm_mingw_triple }}-clang.exe"
+
+          if (-not (Test-Path $clang)) {
+            New-Item -ItemType Directory -Force $toolRoot | Out-Null
+
+            $archivePath = Join-Path $env:RUNNER_TEMP $archive
+            $url = "https://github.com/mstorsjo/llvm-mingw/releases/download/$env:LLVM_MINGW_VERSION/$archive"
+            Invoke-WebRequest -Uri $url -OutFile $archivePath
+
+            $actualSha256 = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+            if ($actualSha256 -ne "${{ matrix.llvm_mingw_sha256 }}") {
+              throw "Expected llvm-mingw SHA256 ${{ matrix.llvm_mingw_sha256 }}, got $actualSha256"
+            }
+
+            $extractRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-${{ matrix.llvm_mingw_arch }}"
+            Remove-Item -Recurse -Force $extractRoot -ErrorAction SilentlyContinue
+            Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
+            $expandedRoot = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
+            if (-not $expandedRoot) {
+              throw "Unable to find extracted llvm-mingw root in $extractRoot"
+            }
+            Copy-Item -Recurse -Force (Join-Path $expandedRoot.FullName "*") $toolRoot
+          }
+
+          if (-not (Test-Path $clang)) {
+            throw "Missing expected llvm-mingw clang: $clang"
+          }
+
+          "LLVM_MINGW_ROOT=$toolRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $binDir = Join-Path $toolRoot "bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
+          & $clang --version
+
+      - name: Save llvm-mingw cache
+        if: matrix.build_host == 'windows' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_arch }}
+          key: ${{ steps.llvm-mingw-cache.outputs.cache-primary-key }}
 
       - name: Restore NASM cache
         id: nasm-cache
