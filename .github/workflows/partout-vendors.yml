@@ -19,7 +19,7 @@ permissions:
 
 env:
   PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
-  PARTOUT_REF: 81818bc13fcc7fcfde95b63edc539b45f1961401
+  PARTOUT_REF: 4dcb022d618d40e023f03ea005207ff56d205b2d
   OPENSSL_VERSION: openssl-3.6.3
   MBEDTLS_VERSION: v4.1.0
   WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
