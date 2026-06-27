@@ -1,11 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("windows-x64", "windows-arm64")]
-    [string]$Target,
-
-    [Parameter(Mandatory = $true)]
-    [ValidateSet("openssl", "mbedtls")]
-    [string]$Vendor
+    [string]$Target
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,34 +11,37 @@ $partoutRepository = $env:PARTOUT_REPOSITORY
 $partoutRef = $env:PARTOUT_REF
 $opensslVersion = $env:OPENSSL_VERSION
 $mbedtlsVersion = $env:MBEDTLS_VERSION
-$generator = $env:CMAKE_GENERATOR
+$wireGuardGoVersion = $env:WIREGUARD_GO_VERSION
 $runtimeLibrary = $env:MSVC_RUNTIME_LIBRARY
 
 if (-not $partoutRepository) { throw "PARTOUT_REPOSITORY is required" }
 if (-not $partoutRef) { throw "PARTOUT_REF is required" }
 if (-not $opensslVersion) { throw "OPENSSL_VERSION is required" }
 if (-not $mbedtlsVersion) { throw "MBEDTLS_VERSION is required" }
-if (-not $generator) { throw "CMAKE_GENERATOR is required" }
+if (-not $wireGuardGoVersion) { throw "WIREGUARD_GO_VERSION is required" }
 if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 
 $root = (Get-Location).Path
 $partoutDir = Join-Path $root ".build\partout"
-$workDir = Join-Path $root ".build\$Target-$Vendor"
-$packageRoot = Join-Path $workDir "package"
+$workDir = Join-Path $root ".build\$Target"
+$buildDir = Join-Path $workDir "cmake-build"
+$installDir = Join-Path $workDir "install"
+$packageDir = Join-Path $workDir "packages"
 $artifactsDir = Join-Path $root "artifacts"
+$vendors = @("openssl", "mbedtls", "wg-go")
 
 switch ($Target) {
     "windows-x64" {
         $arch = "x64"
-        $cmakeArch = "x64"
+        $cmakeProcessor = "AMD64"
         $vcVarsArch = "amd64"
-        $opensslTarget = "VC-WIN64A"
+        $opensslArch = "x64"
     }
     "windows-arm64" {
         $arch = "arm64"
-        $cmakeArch = "ARM64"
+        $cmakeProcessor = "ARM64"
         $vcVarsArch = "amd64_arm64"
-        $opensslTarget = "VC-WIN64-ARM"
+        $opensslArch = "arm64"
     }
 }
 
@@ -79,14 +78,39 @@ if (Test-Path $msbuild) {
 }
 
 $cmakeVersion = ((& cmake --version) | Select-Object -First 1) -replace "^cmake version ", ""
+$ninjaVersion = ""
+if (Get-Command ninja -ErrorAction SilentlyContinue) {
+    $ninjaVersion = ((& ninja --version) | Select-Object -First 1).Trim()
+}
+$goVersion = ""
+if (Get-Command go -ErrorAction SilentlyContinue) {
+    $goVersion = ((& go env GOVERSION) | Select-Object -First 1).Trim()
+}
 $nasmVersion = ""
 if (Get-Command nasm -ErrorAction SilentlyContinue) {
     $nasmVersion = ((& nasm -v) | Select-Object -First 1).Trim()
 }
 
 Remove-Item -Recurse -Force $workDir, $artifactsDir -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force $packageRoot | Out-Null
-New-Item -ItemType Directory -Force $artifactsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildDir, $installDir, $packageDir, $artifactsDir | Out-Null
+
+function ConvertTo-CmdArgument {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Argument
+    )
+
+    '"' + ($Argument -replace '"', '\"') + '"'
+}
+
+function Join-CmdArguments {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    ($Arguments | ForEach-Object { ConvertTo-CmdArgument $_ }) -join " "
+}
 
 function Invoke-VcVarsCommand {
     param(
@@ -107,20 +131,6 @@ function Invoke-VcVarsCommand {
     }
 }
 
-function Copy-SourceTree {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$SourceDir,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DestinationDir
-    )
-
-    Remove-Item -Recurse -Force $DestinationDir -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force $DestinationDir | Out-Null
-    Copy-Item -Recurse -Force (Join-Path $SourceDir "*") $DestinationDir
-}
-
 function Assert-PathExists {
     param(
         [Parameter(Mandatory = $true)]
@@ -132,96 +142,70 @@ function Assert-PathExists {
     }
 }
 
-function Build-OpenSSL {
-    $sourceDir = Join-Path $partoutDir "vendors\openssl"
-    $buildDir = Join-Path $workDir "openssl-src"
-    $installDir = Join-Path $packageRoot "openssl"
-    $flags = @(
-        "no-apps",
-        "no-docs",
-        "no-dsa",
-        "no-engine",
-        "no-gost",
-        "no-legacy",
-        "shared",
-        "no-ssl",
-        "no-tests",
-        "no-zlib"
+$cmakeArgs = @(
+    "-S", $partoutDir,
+    "-B", $buildDir,
+    "-G", "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_INSTALL_PREFIX=$installDir",
+    "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
+    "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary",
+    "-DCMAKE_SYSTEM_PROCESSOR=$cmakeProcessor",
+    "-DPP_BUILD_OUTPUT=$installDir",
+    "-DPP_BUILD_LIBRARY=OFF",
+    "-DPP_BUILD_VENDOR_SOURCE=bundled",
+    "-DPP_BUILD_USE_OPENSSL=ON",
+    "-DPP_BUILD_USE_MBEDTLS=ON",
+    "-DPP_BUILD_USE_WIREGUARD=ON"
+)
+
+$configureCommand = "cmake " + (Join-CmdArguments $cmakeArgs)
+$buildCommand = "cmake --build " + (Join-CmdArguments @($buildDir, "--parallel"))
+$installCommand = "cmake --install " + (Join-CmdArguments @($buildDir))
+Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $root -Command "$configureCommand && $buildCommand && $installCommand"
+
+function Assert-VendorPackage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Vendor
     )
 
-    Copy-SourceTree -SourceDir $sourceDir -DestinationDir $buildDir
-
-    $configureArgs = @(
-        "perl",
-        "Configure",
-        $opensslTarget,
-        "--prefix=""$installDir""",
-        "--openssldir=""$installDir""",
-        "--libdir=lib"
-    ) + $flags
-
-    $command = ($configureArgs -join " ") + " && nmake /NOLOGO && nmake /NOLOGO install_sw"
-    Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $buildDir -Command $command
-
-    Assert-PathExists (Join-Path $installDir "lib\libssl.lib")
-    Assert-PathExists (Join-Path $installDir "lib\libcrypto.lib")
-
-    $binDir = Join-Path $installDir "bin"
-    $sslDlls = Get-ChildItem -Path $binDir -Filter "libssl*.dll" -ErrorAction SilentlyContinue
-    $cryptoDlls = Get-ChildItem -Path $binDir -Filter "libcrypto*.dll" -ErrorAction SilentlyContinue
-    if (-not $sslDlls) { throw "Missing expected OpenSSL SSL DLL in $binDir" }
-    if (-not $cryptoDlls) { throw "Missing expected OpenSSL Crypto DLL in $binDir" }
+    $vendorRoot = Join-Path $installDir $Vendor
+    switch ($Vendor) {
+        "openssl" {
+            Assert-PathExists (Join-Path $vendorRoot "include")
+            Assert-PathExists (Join-Path $vendorRoot "lib\libssl.lib")
+            Assert-PathExists (Join-Path $vendorRoot "lib\libcrypto.lib")
+            Assert-PathExists (Join-Path $vendorRoot "bin\libssl-3-$opensslArch.dll")
+            Assert-PathExists (Join-Path $vendorRoot "bin\libcrypto-3-$opensslArch.dll")
+        }
+        "mbedtls" {
+            Assert-PathExists (Join-Path $vendorRoot "include")
+            Assert-PathExists (Join-Path $vendorRoot "lib\mbedtls.lib")
+            Assert-PathExists (Join-Path $vendorRoot "lib\mbedx509.lib")
+            Assert-PathExists (Join-Path $vendorRoot "lib\mbedcrypto.lib")
+        }
+        "wg-go" {
+            Assert-PathExists (Join-Path $vendorRoot "include")
+            Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.dll")
+            Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.lib")
+        }
+        default {
+            throw "Unknown vendor: $Vendor"
+        }
+    }
 }
 
-function Build-MbedTLS {
-    $sourceDir = Join-Path $partoutDir "vendors\mbedtls"
-    $buildDir = Join-Path $workDir "mbedtls-build"
-    $installDir = Join-Path $packageRoot "mbedtls"
+function New-Manifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Vendor,
 
-    python -m pip install --user --disable-pip-version-check -r (Join-Path $sourceDir "scripts\basic.requirements.txt")
-    Push-Location (Join-Path $sourceDir "tf-psa-crypto")
-    try {
-        python "framework\scripts\make_generated_files.py"
-    } finally {
-        Pop-Location
-    }
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
 
-    Push-Location $sourceDir
-    try {
-        python "scripts\make_generated_files.py"
-    } finally {
-        Pop-Location
-    }
-
-    cmake `
-        -S $sourceDir `
-        -B $buildDir `
-        -G $generator `
-        -A $cmakeArch `
-        -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
-        -DCMAKE_INSTALL_PREFIX="$installDir" `
-        -DCMAKE_MSVC_RUNTIME_LIBRARY="$runtimeLibrary" `
-        -DENABLE_TESTING=OFF `
-        -DENABLE_PROGRAMS=OFF `
-        -DUSE_SHARED_MBEDTLS_LIBRARY=OFF `
-        -DUSE_STATIC_MBEDTLS_LIBRARY=ON
-
-    cmake --build $buildDir --target install --config Release --parallel
-
-    $mbedcryptoLib = Join-Path $installDir "lib\mbedcrypto.lib"
-    $mbedcryptoArchive = Join-Path $installDir "lib\libmbedcrypto.a"
-    if ((-not (Test-Path $mbedcryptoLib)) -and (Test-Path $mbedcryptoArchive)) {
-        Copy-Item -Force $mbedcryptoArchive $mbedcryptoLib
-    }
-
-    Assert-PathExists (Join-Path $installDir "lib\mbedtls.lib")
-    Assert-PathExists (Join-Path $installDir "lib\mbedx509.lib")
-    Assert-PathExists $mbedcryptoLib
-}
-
-function Write-Manifest {
     $libraries = [ordered]@{}
-
     switch ($Vendor) {
         "openssl" {
             $libraries["openssl"] = [ordered]@{
@@ -234,6 +218,16 @@ function Write-Manifest {
                 version = $mbedtlsVersion
                 linkage = "static"
             }
+        }
+        "wg-go" {
+            $libraries["wg-go"] = [ordered]@{
+                partoutRef = $partoutRef
+                wireguardGoVersion = $wireGuardGoVersion
+                linkage = "shared"
+            }
+        }
+        default {
+            throw "Unknown vendor: $Vendor"
         }
     }
 
@@ -249,39 +243,44 @@ function Write-Manifest {
         }
         libraries = $libraries
         toolchains = [ordered]@{
-            go = ""
+            go = $goVersion
             cmake = $cmakeVersion
-            ninja = ""
-            androidApi = ""
-            androidNdk = ""
-            llvmMingw = ""
+            ninja = $ninjaVersion
             visualStudio = $visualStudioPath
             vcTools = $vcToolsVersion
             msbuild = $msbuildVersion
             nasm = $nasmVersion
             msvcRuntimeLibrary = $runtimeLibrary
-            cmakeGenerator = $generator
-            cmakeArch = $cmakeArch
+            cmakeGenerator = "Ninja"
+            cmakeProcessor = $cmakeProcessor
         }
     }
 
-    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $packageRoot "manifest.json")
+    $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $Path
 }
 
 function New-Package {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Vendor
+    )
+
+    Assert-VendorPackage -Vendor $Vendor
+
+    $stagingDir = Join-Path $packageDir $Vendor
+    Remove-Item -Recurse -Force $stagingDir -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $stagingDir | Out-Null
+    Copy-Item -Recurse -Force (Join-Path $installDir $Vendor) (Join-Path $stagingDir $Vendor)
+    New-Manifest -Vendor $Vendor -Path (Join-Path $stagingDir "manifest.json")
+
     $packageName = "partout-vendors-$Vendor-$Target.tar.gz"
     $packagePath = Join-Path $artifactsDir $packageName
-
-    tar -czf $packagePath -C $packageRoot .
+    tar -czf $packagePath -C $stagingDir .
 
     $sha256 = (Get-FileHash -Algorithm SHA256 $packagePath).Hash.ToLowerInvariant()
     "$sha256  $packageName" | Set-Content -Encoding ASCII "$packagePath.sha256"
 }
 
-switch ($Vendor) {
-    "openssl" { Build-OpenSSL }
-    "mbedtls" { Build-MbedTLS }
+foreach ($vendor in $vendors) {
+    New-Package -Vendor $vendor
 }
-
-Write-Manifest
-New-Package

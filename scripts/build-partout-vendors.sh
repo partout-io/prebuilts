@@ -1,50 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-target="${1:?usage: build-partout-vendors.sh <target> <vendor>}"
-vendor="${2:?usage: build-partout-vendors.sh <target> <vendor>}"
+target="${1:?usage: build-partout-vendors.sh <target>}"
 partout_dir="${PARTOUT_DIR:-${PWD}/.build/partout}"
-work_dir="${PWD}/.build/${target}-${vendor}"
-package_root="${work_dir}/package"
+work_dir="${PWD}/.build/${target}"
+build_dir="${work_dir}/cmake-build"
+install_dir="${work_dir}/install"
+package_dir="${work_dir}/packages"
 artifacts_dir="${PWD}/artifacts"
-
-case "${vendor}" in
-    openssl | mbedtls | wg-go)
-        ;;
-    *)
-        echo "Unknown vendor: ${vendor}" >&2
-        exit 1
-        ;;
-esac
+vendors=(openssl mbedtls wg-go)
 
 case "${target}" in
     android-arm64-v8a)
         os="android"
         arch="arm64-v8a"
-        openssl_target="android-arm64"
         android_abi="arm64-v8a"
-        android_goarch="arm64"
-        android_clang_triple="aarch64-linux-android"
-        ;;
-    windows-x64)
-        os="windows"
-        arch="x64"
-        mingw_triple="x86_64-w64-mingw32"
-        goarch="amd64"
-        dlltool_machine="i386:x86-64"
-        ;;
-    windows-arm64)
-        os="windows"
-        arch="arm64"
-        mingw_triple="aarch64-w64-mingw32"
-        goarch="arm64"
-        dlltool_machine="arm64"
+        android_swift_arch="aarch64"
         ;;
     *)
-        echo "Unknown target: ${target}" >&2
+        echo "Unknown Linux-hosted target: ${target}" >&2
         exit 1
         ;;
 esac
+
+if [[ ! -d "${partout_dir}" ]]; then
+    echo "Partout checkout not found: ${partout_dir}" >&2
+    exit 1
+fi
 
 go_version=""
 if command -v go >/dev/null 2>&1; then
@@ -69,126 +51,66 @@ if [[ "${os}" == "android" ]]; then
 fi
 
 rm -rf "${work_dir}" "${artifacts_dir}"
-mkdir -p "${package_root}" "${artifacts_dir}"
+mkdir -p "${build_dir}" "${install_dir}" "${package_dir}" "${artifacts_dir}"
 
-build_openssl() {
-    local source_dir="${partout_dir}/vendors/openssl"
-    local build_dir="${work_dir}/openssl-src"
-    local install_dir="${package_root}/openssl"
-    local flags=(
-        no-apps
-        no-docs
-        no-dsa
-        no-engine
-        no-gost
-        no-legacy
-        shared
-        no-ssl
-        no-tests
-        no-zlib
+cmake_args=(
+    -S "${partout_dir}"
+    -B "${build_dir}"
+    -G Ninja
+    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_INSTALL_PREFIX="${install_dir}"
+    -DPP_BUILD_OUTPUT="${install_dir}"
+    -DPP_BUILD_LIBRARY=OFF
+    -DPP_BUILD_VENDOR_SOURCE=bundled
+    -DPP_BUILD_USE_OPENSSL=ON
+    -DPP_BUILD_USE_MBEDTLS=ON
+    -DPP_BUILD_USE_WIREGUARD=ON
+)
+
+if [[ "${os}" == "android" ]]; then
+    cmake_args+=(
+        -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+        -DANDROID_ABI="${android_abi}"
+        -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
+        -DANDROID_STL=c++_shared
+        -DANDROID_NATIVE_API_LEVEL="${ANDROID_API}"
+        -DSWIFT_ANDROID_ARCH="${android_swift_arch}"
     )
+fi
 
-    cp -a "${source_dir}" "${build_dir}"
-    pushd "${build_dir}"
+cmake "${cmake_args[@]}"
+cmake --build "${build_dir}" --parallel
+cmake --install "${build_dir}"
 
-    if [[ "${os}" == "android" ]]; then
-        local ndk_root="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}"
-        export PATH="${ndk_root}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
-        export ANDROID_NDK_ROOT="${ndk_root}"
-        perl Configure "${openssl_target}" -D__ANDROID_API__="${ANDROID_API:?ANDROID_API is required}" \
-            --prefix="${install_dir}" --openssldir="${install_dir}" --libdir=lib "${flags[@]}"
-    else
-        echo "Windows OpenSSL is built with MSVC by scripts/build-partout-vendors-windows.ps1." >&2
-        exit 1
-    fi
+assert_vendor_package() {
+    local vendor="${1}"
+    local root="${install_dir}/${vendor}"
 
-    make "-j$(nproc)"
-    make install_sw
-    popd
-
-    if [[ "${os}" == "windows" ]]; then
-        if [[ -f "${install_dir}/lib/libssl.dll.a" ]]; then
-            cp "${install_dir}/lib/libssl.dll.a" "${install_dir}/lib/libssl.lib"
-        fi
-        if [[ -f "${install_dir}/lib/libcrypto.dll.a" ]]; then
-            cp "${install_dir}/lib/libcrypto.dll.a" "${install_dir}/lib/libcrypto.lib"
-        fi
-    fi
-}
-
-build_mbedtls() {
-    local source_dir="${partout_dir}/vendors/mbedtls"
-    local build_dir="${work_dir}/mbedtls-build"
-    local install_dir="${package_root}/mbedtls"
-    local cmake_args=(
-        -S "${source_dir}"
-        -B "${build_dir}"
-        -G Ninja
-        -DCMAKE_BUILD_TYPE=Release
-        -DCMAKE_INSTALL_PREFIX="${install_dir}"
-        -DENABLE_TESTING=OFF
-        -DENABLE_PROGRAMS=OFF
-    )
-
-    python3 -m pip install --user --disable-pip-version-check -r "${source_dir}/scripts/basic.requirements.txt"
-    (cd "${source_dir}/tf-psa-crypto" && python3 framework/scripts/make_generated_files.py)
-    (cd "${source_dir}" && python3 scripts/make_generated_files.py)
-
-    if [[ "${os}" == "android" ]]; then
-        cmake_args+=(
-            -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}/build/cmake/android.toolchain.cmake"
-            -DANDROID_ABI="${android_abi}"
-            -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
-        )
-    else
-        echo "Windows Mbed TLS is built with MSVC by scripts/build-partout-vendors-windows.ps1." >&2
-        exit 1
-    fi
-
-    cmake "${cmake_args[@]}"
-    cmake --build "${build_dir}" --target install
-}
-
-build_wg_go() {
-    local source_dir="${partout_dir}/vendors/wg-go"
-    local install_dir="${package_root}/wg-go"
-    local build_dir="${work_dir}/wg-go-build"
-
-    mkdir -p "${install_dir}/include" "${install_dir}/lib" "${build_dir}"
-    cp -R "${source_dir}/include/." "${install_dir}/include"
-
-    if [[ "${os}" == "android" ]]; then
-        local cc="${ANDROID_NDK_ROOT:?ANDROID_NDK_ROOT is required}/toolchains/llvm/prebuilt/linux-x86_64/bin/${android_clang_triple}${ANDROID_API:?ANDROID_API is required}-clang"
-        CGO_ENABLED=1 GOOS=android GOARCH="${android_goarch}" CC="${cc}" \
-            go build -C "${source_dir}/src" -ldflags=-w -trimpath -v \
-            -o "${install_dir}/lib/libwg-go.so" -buildmode=c-shared
-    else
-        local cc="${LLVM_MINGW_ROOT:?LLVM_MINGW_ROOT is required}/bin/${mingw_triple}-clang"
-        CGO_ENABLED=1 GOOS=windows GOARCH="${goarch}" CC="${cc}" \
-            CGO_CFLAGS="--target=${mingw_triple}" CGO_CXXFLAGS="--target=${mingw_triple}" \
-            go build -C "${source_dir}/src" -ldflags=-w -trimpath -v \
-            -o "${install_dir}/lib/wg-go.dll" -buildmode=c-shared
-        cat > "${build_dir}/wg-go.def" <<EOF
-LIBRARY wg-go.dll
-EXPORTS
-wgSetLogger
-wgTurnOn
-wgGetSocketV4
-wgGetSocketV6
-wgTurnOff
-wgSetConfig
-wgGetConfig
-wgBumpSockets
-wgBumpSocketsAndWait
-wgDisableSomeRoamingForBrokenMobileSemantics
-wgVersion
-EOF
-        "${LLVM_MINGW_ROOT}/bin/llvm-dlltool" -m "${dlltool_machine}" -d "${build_dir}/wg-go.def" -l "${install_dir}/lib/wg-go.lib"
-    fi
+    case "${vendor}" in
+        openssl)
+            [[ -d "${root}/include" ]] || { echo "Missing OpenSSL headers in ${root}" >&2; exit 1; }
+            [[ -d "${root}/lib" ]] || { echo "Missing OpenSSL libraries in ${root}" >&2; exit 1; }
+            ;;
+        mbedtls)
+            [[ -d "${root}/include" ]] || { echo "Missing Mbed TLS headers in ${root}" >&2; exit 1; }
+            [[ -f "${root}/lib/libmbedtls.a" ]] || { echo "Missing Mbed TLS library in ${root}" >&2; exit 1; }
+            [[ -f "${root}/lib/libmbedx509.a" ]] || { echo "Missing Mbed X509 library in ${root}" >&2; exit 1; }
+            [[ -f "${root}/lib/libmbedcrypto.a" ]] || { echo "Missing Mbed Crypto library in ${root}" >&2; exit 1; }
+            ;;
+        wg-go)
+            [[ -d "${root}/include" ]] || { echo "Missing wg-go headers in ${root}" >&2; exit 1; }
+            [[ -f "${root}/lib/libwg-go.so" ]] || { echo "Missing wg-go library in ${root}" >&2; exit 1; }
+            ;;
+        *)
+            echo "Unknown vendor: ${vendor}" >&2
+            exit 1
+            ;;
+    esac
 }
 
 write_manifest() {
-    local manifest="${package_root}/manifest.json"
+    local vendor="${1}"
+    local manifest="${2}"
     local libraries_json
 
     case "${vendor}" in
@@ -220,6 +142,10 @@ EOF
 EOF
 )"
             ;;
+        *)
+            echo "Unknown vendor: ${vendor}" >&2
+            exit 1
+            ;;
     esac
 
     cat > "${manifest}" <<EOF
@@ -241,29 +167,27 @@ ${libraries_json}
     "cmake": "${cmake_version}",
     "ninja": "${ninja_version}",
     "androidApi": "${ANDROID_API:-}",
-    "androidNdk": "${android_ndk_version}",
-    "llvmMingw": "${LLVM_MINGW_VERSION:-}"
+    "androidNdk": "${android_ndk_version}"
   }
 }
 EOF
 }
 
-package_target() {
+package_vendor() {
+    local vendor="${1}"
+    local staging_dir="${package_dir}/${vendor}"
     local package_name="partout-vendors-${vendor}-${target}.tar.gz"
-    tar -czf "${artifacts_dir}/${package_name}" -C "${package_root}" .
+
+    assert_vendor_package "${vendor}"
+    rm -rf "${staging_dir}"
+    mkdir -p "${staging_dir}"
+    cp -a "${install_dir}/${vendor}" "${staging_dir}/${vendor}"
+    write_manifest "${vendor}" "${staging_dir}/manifest.json"
+
+    tar -czf "${artifacts_dir}/${package_name}" -C "${staging_dir}" .
     shasum -a 256 "${artifacts_dir}/${package_name}" > "${artifacts_dir}/${package_name}.sha256"
 }
 
-case "${vendor}" in
-    openssl)
-        build_openssl
-        ;;
-    mbedtls)
-        build_mbedtls
-        ;;
-    wg-go)
-        build_wg_go
-        ;;
-esac
-write_manifest
-package_target
+for vendor in "${vendors[@]}"; do
+    package_vendor "${vendor}"
+done

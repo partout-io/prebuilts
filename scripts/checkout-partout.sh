@@ -10,8 +10,7 @@ rm -rf "${partout_dir}"
 
 git clone --filter=blob:none "${repo}" "${partout_dir}"
 git -C "${partout_dir}" checkout --detach "${ref}"
-git -C "${partout_dir}" submodule update --init vendors/openssl vendors/mbedtls
-git -C "${partout_dir}/vendors/mbedtls" submodule update --init --recursive
+git -C "${partout_dir}" submodule update --init --recursive vendors/openssl vendors/mbedtls
 
 actual_ref="$(git -C "${partout_dir}" rev-parse HEAD)"
 if [[ "${actual_ref}" != "${ref}" ]]; then

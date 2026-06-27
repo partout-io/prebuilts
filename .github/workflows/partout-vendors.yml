@@ -8,64 +8,33 @@ permissions:
 
 env:
   PARTOUT_REPOSITORY: https://github.com/partout-io/partout.git
-  PARTOUT_REF: 2400fe52e036f0d10b5f1c105e044f77e296a54e
+  PARTOUT_REF: 4a18e288eac01a659d11cafa7e848c0950fed8dc
   OPENSSL_VERSION: openssl-3.6.3
   MBEDTLS_VERSION: v4.1.0
   WIREGUARD_GO_VERSION: v0.0.0-20250521234502-f333402bd9cb
   ANDROID_API: "28"
   ANDROID_NDK_VERSION: "30.0.14904198"
-  LLVM_MINGW_VERSION: "20260616"
-  LLVM_MINGW_FLAVOR: ucrt
-  LLVM_MINGW_HOST: ubuntu-22.04-x86_64
-  CMAKE_GENERATOR: Visual Studio 17 2022
   MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
   NASM_VERSION: "3.01"
   NASM_SOURCE_SHA256: e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4
 
 jobs:
   build:
-    name: ${{ matrix.vendor }} / ${{ matrix.target }}
+    name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
         include:
-          - vendor: openssl
-            target: android-arm64-v8a
+          - target: android-arm64-v8a
             runner: ubuntu-24.04
             build_host: linux
-          - vendor: mbedtls
-            target: android-arm64-v8a
-            runner: ubuntu-24.04
-            build_host: linux
-          - vendor: wg-go
-            target: android-arm64-v8a
-            runner: ubuntu-24.04
-            build_host: linux
-          - vendor: openssl
-            target: windows-x64
+          - target: windows-x64
             runner: windows-2022
             build_host: windows
-          - vendor: mbedtls
-            target: windows-x64
+          - target: windows-arm64
             runner: windows-2022
             build_host: windows
-          - vendor: wg-go
-            target: windows-x64
-            runner: ubuntu-24.04
-            build_host: linux
-          - vendor: openssl
-            target: windows-arm64
-            runner: windows-2022
-            build_host: windows
-          - vendor: mbedtls
-            target: windows-arm64
-            runner: windows-2022
-            build_host: windows
-          - vendor: wg-go
-            target: windows-arm64
-            runner: ubuntu-24.04
-            build_host: linux
 
     steps:
       - name: Check out prebuilts
@@ -76,7 +45,6 @@ jobs:
         run: scripts/checkout-partout.sh
 
       - name: Set up Go from runner image
-        if: matrix.vendor == 'wg-go'
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
@@ -84,6 +52,7 @@ jobs:
 
       - name: Select Android NDK
         if: startsWith(matrix.target, 'android-')
+        shell: bash
         run: |
           ndk_dir="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
           if [ ! -d "${ndk_dir}" ]; then
@@ -95,28 +64,16 @@ jobs:
           fi
           echo "ANDROID_NDK_ROOT=${ndk_dir}" >> "${GITHUB_ENV}"
 
-      - name: Install pinned llvm-mingw
-        if: matrix.vendor == 'wg-go' && startsWith(matrix.target, 'windows-')
-        shell: bash
-        run: |
-          archive="llvm-mingw-${LLVM_MINGW_VERSION}-${LLVM_MINGW_FLAVOR}-${LLVM_MINGW_HOST}.tar.xz"
-          url="https://github.com/mstorsjo/llvm-mingw/releases/download/${LLVM_MINGW_VERSION}/${archive}"
-          curl -L "${url}" -o "${RUNNER_TEMP}/${archive}"
-          mkdir -p "${RUNNER_TEMP}/llvm-mingw"
-          tar -xf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/llvm-mingw" --strip-components=1
-          echo "LLVM_MINGW_ROOT=${RUNNER_TEMP}/llvm-mingw" >> "${GITHUB_ENV}"
-          echo "${RUNNER_TEMP}/llvm-mingw/bin" >> "${GITHUB_PATH}"
-
       - name: Restore NASM cache
         id: nasm-cache
-        if: matrix.vendor == 'openssl' && matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows'
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/nasm/${{ env.NASM_VERSION }}
           key: nasm-windows-${{ matrix.target }}-${{ env.NASM_VERSION }}-${{ env.NASM_SOURCE_SHA256 }}
 
       - name: Set up NASM for OpenSSL
-        if: matrix.vendor == 'openssl' && matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows'
         shell: pwsh
         run: |
           $nasmRoot = Join-Path (Join-Path $env:RUNNER_TOOL_CACHE "nasm") $env:NASM_VERSION
@@ -143,25 +100,25 @@ jobs:
           nasm -v
 
       - name: Save NASM cache
-        if: matrix.vendor == 'openssl' && matrix.build_host == 'windows' && steps.nasm-cache.outputs.cache-hit != 'true'
+        if: matrix.build_host == 'windows' && steps.nasm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/nasm/${{ env.NASM_VERSION }}
           key: ${{ steps.nasm-cache.outputs.cache-primary-key }}
 
-      - name: Build Linux-hosted ${{ matrix.vendor }} for ${{ matrix.target }}
+      - name: Build Linux-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'linux'
         shell: bash
-        run: scripts/build-partout-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
+        run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
 
-      - name: Build Windows-hosted ${{ matrix.vendor }} for ${{ matrix.target }}
+      - name: Build Windows-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'windows'
         shell: pwsh
-        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}" -Vendor "${{ matrix.vendor }}"
+        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}"
 
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:
-          name: partout-vendors-${{ matrix.vendor }}-${{ matrix.target }}
+          name: partout-vendors-${{ matrix.target }}
           path: artifacts/*
           if-no-files-found: error
