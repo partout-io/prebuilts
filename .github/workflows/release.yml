@@ -10,7 +10,7 @@ on:
       prerelease:
         description: Mark a newly created release as a prerelease.
         required: true
-        default: true
+        default: false
         type: boolean
       partout_vendors_run_id:
         description: Partout Vendors run ID. Leave blank for latest successful run.
