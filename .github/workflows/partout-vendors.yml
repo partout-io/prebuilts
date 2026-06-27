@@ -34,15 +34,15 @@ jobs:
           - target: windows-x64
             runner: windows-2022
             build_host: windows
-            llvm_mingw_arch: x86_64
+            llvm_mingw_host_arch: x86_64
             llvm_mingw_triple: x86_64-w64-mingw32
             llvm_mingw_sha256: b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35
           - target: windows-arm64
             runner: windows-2022
             build_host: windows
-            llvm_mingw_arch: aarch64
+            llvm_mingw_host_arch: x86_64
             llvm_mingw_triple: aarch64-w64-mingw32
-            llvm_mingw_sha256: 312593669435bd0bfc1a43ac3fba23c8b27e0610bade88b2738e5a01702a99ba
+            llvm_mingw_sha256: b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35
 
     steps:
       - name: Check out prebuilts
@@ -79,15 +79,15 @@ jobs:
         if: matrix.build_host == 'windows'
         uses: actions/cache/restore@v6.1.0
         with:
-          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_arch }}
+          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
           key: llvm-mingw-windows-${{ matrix.target }}-${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_sha256 }}
 
       - name: Set up llvm-mingw for wg-go
         if: matrix.build_host == 'windows'
         shell: pwsh
         run: |
-          $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_arch }}.zip"
-          $toolRoot = Join-Path (Join-Path $env:RUNNER_TOOL_CACHE "llvm-mingw") "$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_arch }}"
+          $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_host_arch }}.zip"
+          $toolRoot = Join-Path (Join-Path $env:RUNNER_TOOL_CACHE "llvm-mingw") "$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_host_arch }}"
           $clang = Join-Path $toolRoot "bin\${{ matrix.llvm_mingw_triple }}-clang.exe"
 
           if (-not (Test-Path $clang)) {
@@ -102,7 +102,7 @@ jobs:
               throw "Expected llvm-mingw SHA256 ${{ matrix.llvm_mingw_sha256 }}, got $actualSha256"
             }
 
-            $extractRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-${{ matrix.llvm_mingw_arch }}"
+            $extractRoot = Join-Path $env:RUNNER_TEMP "llvm-mingw-${{ matrix.llvm_mingw_host_arch }}"
             Remove-Item -Recurse -Force $extractRoot -ErrorAction SilentlyContinue
             Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
             $expandedRoot = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
@@ -125,7 +125,7 @@ jobs:
         if: matrix.build_host == 'windows' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
-          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_arch }}
+          path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
           key: ${{ steps.llvm-mingw-cache.outputs.cache-primary-key }}
 
       - name: Restore NASM cache
