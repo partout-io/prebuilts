@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo="${PARTOUT_REPOSITORY:?PARTOUT_REPOSITORY is required}"
 ref="${PARTOUT_REF:?PARTOUT_REF is required}"
-partout_dir="${PARTOUT_DIR:-${PWD}/.build/partout}"
+partout_dir="${PARTOUT_DIR:-${PWD}/partout}"
 
 mkdir -p "$(dirname "${partout_dir}")"
 rm -rf "${partout_dir}"
