@@ -7,26 +7,16 @@ param(
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 
-$partoutRepository = $env:PARTOUT_REPOSITORY
-$partoutRef = $env:PARTOUT_REF
-$opensslVersion = $env:OPENSSL_VERSION
-$mbedtlsVersion = $env:MBEDTLS_VERSION
-$wireGuardGoVersion = $env:WIREGUARD_GO_VERSION
 $llvmMingwVersion = $env:LLVM_MINGW_VERSION
 $llvmMingwRoot = $env:LLVM_MINGW_ROOT
 $runtimeLibrary = $env:MSVC_RUNTIME_LIBRARY
 
-if (-not $partoutRepository) { throw "PARTOUT_REPOSITORY is required" }
-if (-not $partoutRef) { throw "PARTOUT_REF is required" }
-if (-not $opensslVersion) { throw "OPENSSL_VERSION is required" }
-if (-not $mbedtlsVersion) { throw "MBEDTLS_VERSION is required" }
-if (-not $wireGuardGoVersion) { throw "WIREGUARD_GO_VERSION is required" }
 if (-not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required" }
 if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required" }
 if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 
 $root = (Get-Location).Path
-$partoutDir = Join-Path $root ".build\partout"
+$partoutDir = Join-Path $root "partout"
 $workDir = Join-Path $root ".build\$Target"
 $buildDir = Join-Path $workDir "cmake-build"
 $vendorOutputDir = Join-Path $workDir "vendor-output"
@@ -51,6 +41,40 @@ switch ($Target) {
 
 if (-not (Test-Path $partoutDir)) {
     throw "Partout checkout not found: $partoutDir"
+}
+
+function Get-GitOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $output = & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+
+    (($output | Select-Object -First 1) -as [string]).Trim()
+}
+
+$partoutRepository = Get-GitOutput -Arguments @("config", "--file", ".gitmodules", "--get", "submodule.partout.url")
+$partoutRef = Get-GitOutput -Arguments @("-C", $partoutDir, "rev-parse", "HEAD")
+$opensslDir = Join-Path $partoutDir "vendors\openssl"
+$mbedtlsDir = Join-Path $partoutDir "vendors\mbedtls"
+$opensslRef = Get-GitOutput -Arguments @("-C", $opensslDir, "rev-parse", "HEAD")
+$mbedtlsRef = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "rev-parse", "HEAD")
+$opensslVersion = Get-GitOutput -Arguments @("-C", $opensslDir, "describe", "--tags", "--always", "--dirty")
+$mbedtlsVersion = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "describe", "--tags", "--always", "--dirty")
+$wireGuardGoSum = Join-Path $partoutDir "vendors\wg-go\go.sum"
+$wireGuardGoVersion = ""
+foreach ($line in Get-Content $wireGuardGoSum) {
+    if ($line -match "^\s*golang\.zx2c4\.com/wireguard\s+(\S+)\s+" -and $Matches[1] -notlike "*/go.mod") {
+        $wireGuardGoVersion = $Matches[1]
+        break
+    }
+}
+if (-not $wireGuardGoVersion) {
+    throw "Unable to resolve golang.zx2c4.com/wireguard from $wireGuardGoSum"
 }
 
 $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
@@ -204,10 +228,12 @@ function New-Manifest {
     $libraries = [ordered]@{}
     $libraries["openssl"] = [ordered]@{
         version = $opensslVersion
+        ref = $opensslRef
         linkage = "shared"
     }
     $libraries["mbedtls"] = [ordered]@{
         version = $mbedtlsVersion
+        ref = $mbedtlsRef
         linkage = "static"
     }
     $libraries["wg-go"] = [ordered]@{
