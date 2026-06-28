@@ -2,7 +2,7 @@
 set -euo pipefail
 
 target="${1:?usage: build-partout-vendors.sh <target>}"
-partout_dir="${PARTOUT_DIR:-${PWD}/.build/partout}"
+partout_dir="${PARTOUT_DIR:-${PWD}/partout}"
 work_dir="${PWD}/.build/${target}"
 build_dir="${work_dir}/cmake-build"
 vendor_output_dir="${work_dir}/vendor-output"
@@ -25,6 +25,21 @@ esac
 
 if [[ ! -d "${partout_dir}" ]]; then
     echo "Partout checkout not found: ${partout_dir}" >&2
+    exit 1
+fi
+
+partout_repository="$(git config --file .gitmodules --get submodule.partout.url || git -C "${partout_dir}" config --get remote.origin.url || true)"
+partout_ref="$(git -C "${partout_dir}" rev-parse HEAD)"
+openssl_dir="${partout_dir}/vendors/openssl"
+mbedtls_dir="${partout_dir}/vendors/mbedtls"
+openssl_ref="$(git -C "${openssl_dir}" rev-parse HEAD)"
+mbedtls_ref="$(git -C "${mbedtls_dir}" rev-parse HEAD)"
+openssl_version="$(git -C "${openssl_dir}" describe --tags --always --dirty)"
+mbedtls_version="$(git -C "${mbedtls_dir}" describe --tags --always --dirty)"
+wireguard_go_sum="${partout_dir}/vendors/wg-go/go.sum"
+wireguard_go_version="$(awk '$1 == "golang.zx2c4.com/wireguard" && $2 !~ /\/go\.mod$/ { print $2; exit }' "${wireguard_go_sum}")"
+if [[ -z "${wireguard_go_version}" ]]; then
+    echo "Unable to resolve golang.zx2c4.com/wireguard from ${wireguard_go_sum}" >&2
     exit 1
 fi
 
@@ -119,21 +134,23 @@ cat > "${install_dir}/manifest.json" <<EOF
   "os": "${os}",
   "arch": "${arch}",
   "partout": {
-    "repository": "${PARTOUT_REPOSITORY}",
-    "ref": "${PARTOUT_REF}"
+    "repository": "${partout_repository}",
+    "ref": "${partout_ref}"
   },
   "libraries": {
     "openssl": {
-      "version": "${OPENSSL_VERSION}",
+      "version": "${openssl_version}",
+      "ref": "${openssl_ref}",
       "linkage": "shared"
     },
     "mbedtls": {
-      "version": "${MBEDTLS_VERSION}",
+      "version": "${mbedtls_version}",
+      "ref": "${mbedtls_ref}",
       "linkage": "static"
     },
     "wg-go": {
-      "partoutRef": "${PARTOUT_REF}",
-      "wireguardGoVersion": "${WIREGUARD_GO_VERSION}",
+      "partoutRef": "${partout_ref}",
+      "wireguardGoVersion": "${wireguard_go_version}",
       "linkage": "shared"
     }
   },

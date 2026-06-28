@@ -4,7 +4,7 @@ This repository builds binary dependencies used by Passepartout and Partout.
 
 ## Workflows
 
-- `Partout Vendors` builds Partout vendors from a pinned `partout-io/partout` checkout, as one workflow job per target:
+- `Partout Vendors` builds Partout vendors from the pinned `partout` submodule, as one workflow job per target:
   - OpenSSL
   - Mbed TLS
   - wg-go
@@ -17,8 +17,8 @@ The current Android target is `arm64-v8a` only. Partout owns the vendor build lo
 
 ## Version Pins
 
-The workflow files are the source of truth for pinned dependency and toolchain versions. The pinned Partout checkout is the source of truth for vendor build logic. Build packages include a root `manifest.json` with the exact source refs, library versions, target, and toolchain metadata used for that artifact.
+The workflow files are the source of truth for pinned toolchain versions. The `partout` submodule is the source of truth for vendor build logic and bundled vendor pins. Build packages include a root `manifest.json` with the exact source refs, library versions, target, and toolchain metadata used for that artifact.
 
-`wg-go` is tracked directly in Partout rather than as a submodule, so its source revision is the pinned Partout commit. Its upstream WireGuard Go version is pinned in Partout's `vendors/wg-go/go.mod`.
+`wg-go` is tracked directly in Partout rather than as a submodule, so its source revision is the pinned Partout commit. Its upstream WireGuard Go dependency is pinned by Partout's `vendors/wg-go/go.mod` and `go.sum`.
 
 Tooling otherwise comes from the selected GitHub-hosted runner images, using their stable CMake, Ninja, MSVC, PowerShell, tar/gzip, and Go toolchain cache.
