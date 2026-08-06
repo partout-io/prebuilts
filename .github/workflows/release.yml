@@ -12,8 +12,8 @@ on:
         required: true
         default: false
         type: boolean
-      partout_vendors_run_id:
-        description: Partout Vendors run ID. Leave blank for latest successful run.
+      vendor_prebuilts_run_id:
+        description: Vendor Prebuilts run ID. Leave blank for latest successful run.
         required: false
         type: string
       windows_wxwidgets_run_id:
@@ -35,14 +35,14 @@ jobs:
       - name: Resolve build runs
         env:
           GH_TOKEN: ${{ github.token }}
-          PARTOUT_VENDORS_RUN_ID: ${{ inputs.partout_vendors_run_id }}
+          VENDOR_PREBUILTS_RUN_ID: ${{ inputs.vendor_prebuilts_run_id }}
           WINDOWS_WXWIDGETS_RUN_ID: ${{ inputs.windows_wxwidgets_run_id }}
         run: |
           set -euo pipefail
 
-          partout_run_id="${PARTOUT_VENDORS_RUN_ID}"
-          if [ -z "${partout_run_id}" ]; then
-            partout_run_id="$(gh run list --workflow partout-vendors.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          vendors_run_id="${VENDOR_PREBUILTS_RUN_ID}"
+          if [ -z "${vendors_run_id}" ]; then
+            vendors_run_id="$(gh run list --workflow partout-vendors.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           fi
 
           windows_run_id="${WINDOWS_WXWIDGETS_RUN_ID}"
@@ -50,8 +50,8 @@ jobs:
             windows_run_id="$(gh run list --workflow windows-wxwidgets.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           fi
 
-          if [ -z "${partout_run_id}" ] || [ "${partout_run_id}" = "null" ]; then
-            echo "No Partout Vendors run ID provided and no successful Partout Vendors run found." >&2
+          if [ -z "${vendors_run_id}" ] || [ "${vendors_run_id}" = "null" ]; then
+            echo "No Vendor Prebuilts run ID provided and no successful Vendor Prebuilts run found." >&2
             exit 1
           fi
 
@@ -60,9 +60,9 @@ jobs:
             exit 1
           fi
 
-          echo "PARTOUT_RUN_ID=${partout_run_id}" >> "${GITHUB_ENV}"
+          echo "VENDORS_RUN_ID=${vendors_run_id}" >> "${GITHUB_ENV}"
           echo "WINDOWS_RUN_ID=${windows_run_id}" >> "${GITHUB_ENV}"
-          echo "Using Partout Vendors run ${partout_run_id}"
+          echo "Using Vendor Prebuilts run ${vendors_run_id}"
           echo "Using Windows wxWidgets run ${windows_run_id}"
 
       - name: Download build artifacts
@@ -70,8 +70,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p release-assets/partout-vendors release-assets/windows-wxwidgets
-          gh run download "${PARTOUT_RUN_ID}" --dir release-assets/partout-vendors
+          mkdir -p release-assets/vendor-prebuilts release-assets/windows-wxwidgets
+          gh run download "${VENDORS_RUN_ID}" --dir release-assets/vendor-prebuilts
           gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
           find release-assets -type f -print | sort
 
@@ -90,7 +90,7 @@ jobs:
 
           {
             printf 'Prebuilts for %s.\n\n' "${RELEASE_TAG}"
-            printf 'Partout Vendors run: %s\n' "${PARTOUT_RUN_ID}"
+            printf 'Vendor Prebuilts run: %s\n' "${VENDORS_RUN_ID}"
             printf 'Windows wxWidgets run: %s\n' "${WINDOWS_RUN_ID}"
           } > release-notes.md
 

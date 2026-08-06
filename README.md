@@ -1,41 +1,63 @@
 # Prebuilts
 
-This repository builds binary dependencies used by Passepartout and Partout.
+This repository is the source of truth for third-party binary dependencies used by Passepartout and Partout. It owns the upstream source pins, patches, cross-platform build recipes, packaging, and release metadata.
+
+## Vendor Superbuild
+
+The root CMake project builds OpenSSL, Mbed TLS, wg-go, and Wintun without building Partout. One CMake configure represents one target ABI; toolchain files carry the cross-compilation environment into the vendor adapters under `cmake/vendors`.
+
+The build can select vendors independently:
+
+```sh
+cmake -S . -B .build/vendors -G Ninja \
+    -DPPV_BUILD_OPENSSL=ON \
+    -DPPV_BUILD_MBEDTLS=ON \
+    -DPPV_BUILD_WG_GO=ON
+cmake --build .build/vendors --target vendors
+```
+
+Initialize the OpenSSL and Mbed TLS sources before building:
+
+```sh
+scripts/checkout-vendors.sh
+```
+
+Partout contains no vendor sources or vendor build recipes. It consumes system libraries, a local artifact root through `PP_BUILD_VENDOR_ROOT`, or published archives through `PP_BUILD_VENDOR_PREBUILT_URL`.
 
 ## Workflows
 
-- `Partout Vendors` builds Partout vendors from the pinned `partout` submodule, as one workflow job per target:
-  - OpenSSL
-  - Mbed TLS
-  - wg-go
+- `Vendor Prebuilts` builds the vendor distribution matrix.
 - `Windows wxWidgets` builds static wxWidgets libraries with MSVC.
-- `Release Prebuilts` downloads artifacts from successful build workflow runs and uploads them to a GitHub Release.
+- `Release Prebuilts` downloads successful workflow artifacts and uploads them to a GitHub Release.
 
-All workflows are manual (`workflow_dispatch`) while the packaging format is still settling. Build workflows only upload GitHub Actions artifacts. The release workflow takes a required `release_tag`, optional build run IDs, and publishes the downloaded artifacts as release assets.
+All workflows are manual (`workflow_dispatch`) while the packaging format is settling. Build workflows upload GitHub Actions artifacts; the release workflow publishes those artifacts as release assets.
 
-Partout owns the vendor build logic through its CMake project. The build jobs enable bundled vendors, set `PP_BUILD_LIBRARY=OFF`, and build the OpenSSL, Mbed TLS, and wg-go vendor targets without building Partout itself.
+### Apple XCFrameworks
 
-The Apple job produces static `openssl.xcframework`, `mbedtls.xcframework`, and `wg-go.xcframework` archives for:
+The Apple matrix builds OpenSSL, Mbed TLS, and wg-go in separate parallel jobs. Each job produces one static XCFramework containing slices for:
 
 - iOS device (`arm64`) and simulator (`arm64`, `x86_64`)
 - macOS (`arm64`, `x86_64`)
 - tvOS device (`arm64`) and simulator (`arm64`, `x86_64`)
 
-OpenSSL's `libssl.a` and `libcrypto.a` are consolidated into one archive per slice. Mbed TLS's `libmbedtls.a`, `libmbedx509.a`, and `libmbedcrypto.a` are consolidated in the same way. wg-go is built with Go's `c-archive` mode. The final XCFrameworks contain only `.a` libraries and headers; generated dylibs are not packaged.
+OpenSSL's `libssl.a` and `libcrypto.a` are consolidated into one archive per slice. Mbed TLS's `libmbedtls.a`, `libmbedx509.a`, and `libmbedcrypto.a` are consolidated similarly. wg-go uses Go's `c-archive` mode. No dynamic library is included in an Apple XCFramework.
 
-Each Apple XCFramework is zipped as an independent SwiftPM-compatible release asset with `.checksum` and `.sha256` sidecars. The job also emits `partout-vendors-apple-manifest.json` with source revisions, deployment targets, and toolchain versions. Build all Apple slices locally with:
+Each job emits a zipped SwiftPM-compatible XCFramework, `.checksum` and `.sha256` sidecars, and a vendor-specific manifest. Build all Apple vendors locally with:
 
 ```sh
-scripts/checkout-partout.sh
 scripts/build-partout-apple-xcframeworks.sh all
 ```
 
-The current Android target is `arm64-v8a` only. Windows `wg-go` is built on Windows with Go and llvm-mingw clang for cgo. Non-Apple target jobs emit one target archive plus a `.sha256` sidecar: `.tar.gz` for Android and `.zip` for Windows.
+Pass a vendor as the second argument to reproduce one CI job, for example:
+
+```sh
+scripts/build-partout-apple-xcframeworks.sh all openssl
+```
+
+The current non-Apple targets are Android `arm64-v8a` and Windows `x64`/`arm64`.
 
 ## Version Pins
 
-The workflow files are the source of truth for pinned toolchain versions. The `partout` submodule is the source of truth for vendor build logic and bundled vendor pins. Build packages include a root `manifest.json` with the exact source refs, library versions, target, and toolchain metadata used for that artifact.
+The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Wintun and toolchain versions are pinned by the CMake and workflow files.
 
-`wg-go` is tracked directly in Partout rather than as a submodule, so its source revision is the pinned Partout commit. Its upstream WireGuard Go dependency is pinned by Partout's `vendors/wg-go/go.mod` and `go.sum`.
-
-Tooling otherwise comes from the selected GitHub-hosted runner images, using their stable CMake, Ninja, MSVC, PowerShell, tar/gzip, and Go toolchain cache.
+Every package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata.

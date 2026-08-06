@@ -16,13 +16,12 @@ if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required" }
 if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 
 $root = (Get-Location).Path
-$partoutDir = Join-Path $root "partout"
 $workDir = Join-Path $root ".build\$Target"
 $buildDir = Join-Path $workDir "cmake-build"
 $vendorOutputDir = Join-Path $workDir "vendor-output"
 $installDir = Join-Path $workDir "install"
 $artifactsDir = Join-Path $root "artifacts"
-$vendors = @("openssl", "mbedtls", "wg-go")
+$vendors = @("openssl", "mbedtls", "wg-go", "wintun")
 
 switch ($Target) {
     "windows-x64" {
@@ -39,10 +38,6 @@ switch ($Target) {
     }
 }
 
-if (-not (Test-Path $partoutDir)) {
-    throw "Partout checkout not found: $partoutDir"
-}
-
 function Get-GitOutput {
     param(
         [Parameter(Mandatory = $true)]
@@ -57,15 +52,15 @@ function Get-GitOutput {
     (($output | Select-Object -First 1) -as [string]).Trim()
 }
 
-$partoutRepository = Get-GitOutput -Arguments @("config", "--file", ".gitmodules", "--get", "submodule.partout.url")
-$partoutRef = Get-GitOutput -Arguments @("-C", $partoutDir, "rev-parse", "HEAD")
-$opensslDir = Join-Path $partoutDir "vendors\openssl"
-$mbedtlsDir = Join-Path $partoutDir "vendors\mbedtls"
+$prebuiltsRepository = Get-GitOutput -Arguments @("config", "--get", "remote.origin.url")
+$prebuiltsRef = Get-GitOutput -Arguments @("rev-parse", "HEAD")
+$opensslDir = Join-Path $root "vendors\openssl"
+$mbedtlsDir = Join-Path $root "vendors\mbedtls"
 $opensslRef = Get-GitOutput -Arguments @("-C", $opensslDir, "rev-parse", "HEAD")
 $mbedtlsRef = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "rev-parse", "HEAD")
 $opensslVersion = Get-GitOutput -Arguments @("-C", $opensslDir, "describe", "--tags", "--always", "--dirty")
 $mbedtlsVersion = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "describe", "--tags", "--always", "--dirty")
-$wireGuardGoSum = Join-Path $partoutDir "vendors\wg-go\go.sum"
+$wireGuardGoSum = Join-Path $root "vendors\wg-go\go.sum"
 $wireGuardGoVersion = ""
 foreach ($line in Get-Content $wireGuardGoSum) {
     if ($line -match "^\s*golang\.zx2c4\.com/wireguard\s+(\S+)\s+" -and $Matches[1] -notlike "*/go.mod") {
@@ -171,7 +166,7 @@ function Assert-PathExists {
 }
 
 $cmakeArgs = @(
-    "-S", $partoutDir,
+    "-S", $root,
     "-B", $buildDir,
     "-G", "Ninja",
     "-DCMAKE_BUILD_TYPE=Release",
@@ -179,16 +174,15 @@ $cmakeArgs = @(
     "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
     "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary",
     "-DCMAKE_SYSTEM_PROCESSOR=$cmakeProcessor",
-    "-DPP_BUILD_OUTPUT=$vendorOutputDir",
-    "-DPP_BUILD_LIBRARY=OFF",
-    "-DPP_BUILD_VENDOR_SOURCE=bundled",
-    "-DPP_BUILD_USE_OPENSSL=ON",
-    "-DPP_BUILD_USE_MBEDTLS=ON",
-    "-DPP_BUILD_USE_WIREGUARD=ON"
+    "-DPPV_OUTPUT=$vendorOutputDir",
+    "-DPPV_BUILD_OPENSSL=ON",
+    "-DPPV_BUILD_MBEDTLS=ON",
+    "-DPPV_BUILD_WG_GO=ON",
+    "-DPPV_BUILD_WINTUN=ON"
 )
 
 $configureCommand = "cmake " + (Join-CmdArguments $cmakeArgs)
-$buildCommand = "cmake --build " + (Join-CmdArguments @($buildDir, "--parallel"))
+$buildCommand = "cmake --build " + (Join-CmdArguments @($buildDir, "--target", "vendors", "--parallel"))
 $installCommand = "cmake --install " + (Join-CmdArguments @($buildDir))
 Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $root -Command "$configureCommand && $buildCommand && $installCommand"
 
@@ -218,6 +212,10 @@ function Assert-VendorPackage {
             Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.dll")
             Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.lib")
         }
+        "wintun" {
+            Assert-PathExists (Join-Path $vendorRoot "wintun.dll")
+            Assert-PathExists (Join-Path $vendorRoot "wintun.h")
+        }
         default {
             throw "Unknown vendor: $Vendor"
         }
@@ -237,7 +235,7 @@ function New-Manifest {
         linkage = "static"
     }
     $libraries["wg-go"] = [ordered]@{
-        partoutRef = $partoutRef
+        sourceRef = $prebuiltsRef
         wireguardGoVersion = $wireGuardGoVersion
         linkage = "shared"
     }
@@ -247,9 +245,9 @@ function New-Manifest {
         target = $Target
         os = "windows"
         arch = $arch
-        partout = [ordered]@{
-            repository = $partoutRepository
-            ref = $partoutRef
+        prebuilts = [ordered]@{
+            repository = $prebuiltsRepository
+            ref = $prebuiltsRef
         }
         libraries = $libraries
         toolchains = [ordered]@{
