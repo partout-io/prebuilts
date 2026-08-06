@@ -10,12 +10,37 @@ build_dir="${work_dir}/cmake-build"
 vendor_output_dir="${work_dir}/vendor-output"
 install_dir="${work_dir}/install"
 artifacts_dir="${repository_dir}/artifacts"
+is_android=0
+host_arch="$(uname -m)"
+host_system="$(uname -s)"
+
+if [[ "${host_system}" != Linux ]]; then
+    echo "build-vendors.sh must run on Linux, got ${host_system}." >&2
+    exit 1
+fi
 
 case "${target}" in
     android-arm64-v8a)
         os="android"
         arch="arm64-v8a"
         android_abi="arm64-v8a"
+        is_android=1
+        ;;
+    linux-x64)
+        os="linux"
+        arch="x64"
+        if [[ "${host_arch}" != x86_64 && "${host_arch}" != amd64 ]]; then
+            echo "linux-x64 must be built on an x64 host, got ${host_arch}." >&2
+            exit 1
+        fi
+        ;;
+    linux-arm64)
+        os="linux"
+        arch="arm64"
+        if [[ "${host_arch}" != aarch64 && "${host_arch}" != arm64 ]]; then
+            echo "linux-arm64 must be built on an arm64 host, got ${host_arch}." >&2
+            exit 1
+        fi
         ;;
     *)
         echo "Unknown Linux-hosted target: ${target}" >&2
@@ -37,10 +62,14 @@ case "${vendor}" in
         build_wg_go=ON
         ;;
     *)
-        echo "Unknown Android vendor: ${vendor}. Expected openssl, mbedtls, or wg-go." >&2
+        echo "Unknown vendor: ${vendor}. Expected openssl, mbedtls, or wg-go." >&2
         exit 1
         ;;
 esac
+if [[ "${os}" == linux && "${vendor}" != wg-go ]]; then
+    echo "Linux prebuilts only support wg-go." >&2
+    exit 1
+fi
 
 openssl_dir="${repository_dir}/vendors/openssl"
 mbedtls_dir="${repository_dir}/vendors/mbedtls"
@@ -88,17 +117,19 @@ fi
 cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
 ninja_version="$(ninja --version 2>/dev/null || true)"
 
-if [[ -n "${ANDROID_NDK_ROOT:-}" && -d "${ANDROID_NDK_ROOT}" ]]; then
-    :
-elif [[ -n "${ANDROID_NDK_VERSION:-}" && -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" ]]; then
-    export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
-elif [[ -n "${ANDROID_NDK_LATEST_HOME:-}" && -d "${ANDROID_NDK_LATEST_HOME}" ]]; then
-    export ANDROID_NDK_ROOT="${ANDROID_NDK_LATEST_HOME}"
-else
-    echo "Unable to resolve Android NDK. Set ANDROID_NDK_ROOT or ANDROID_NDK_LATEST_HOME." >&2
-    exit 1
+if [[ "${is_android}" == 1 ]]; then
+    if [[ -n "${ANDROID_NDK_ROOT:-}" && -d "${ANDROID_NDK_ROOT}" ]]; then
+        :
+    elif [[ -n "${ANDROID_NDK_VERSION:-}" && -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" ]]; then
+        export ANDROID_NDK_ROOT="${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+    elif [[ -n "${ANDROID_NDK_LATEST_HOME:-}" && -d "${ANDROID_NDK_LATEST_HOME}" ]]; then
+        export ANDROID_NDK_ROOT="${ANDROID_NDK_LATEST_HOME}"
+    else
+        echo "Unable to resolve Android NDK. Set ANDROID_NDK_ROOT or ANDROID_NDK_LATEST_HOME." >&2
+        exit 1
+    fi
+    android_ndk_version="$(basename "${ANDROID_NDK_ROOT}")"
 fi
-android_ndk_version="$(basename "${ANDROID_NDK_ROOT}")"
 
 rm -rf "${work_dir}"
 mkdir -p "${build_dir}" "${vendor_output_dir}" "${install_dir}" "${artifacts_dir}"
@@ -109,16 +140,20 @@ cmake_args=(
     -G Ninja
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_INSTALL_PREFIX="${install_dir}"
-    -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
-    -DANDROID_ABI="${android_abi}"
-    -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
-    -DANDROID_STL=c++_shared
-    -DANDROID_NATIVE_API_LEVEL="${ANDROID_API}"
     -DPPV_BUILD_MBEDTLS="${build_mbedtls}"
     -DPPV_BUILD_OPENSSL="${build_openssl}"
     -DPPV_BUILD_WG_GO="${build_wg_go}"
     -DPPV_OUTPUT="${vendor_output_dir}"
 )
+if [[ "${is_android}" == 1 ]]; then
+    cmake_args+=(
+        -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+        -DANDROID_ABI="${android_abi}"
+        -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
+        -DANDROID_STL=c++_shared
+        -DANDROID_NATIVE_API_LEVEL="${ANDROID_API}"
+    )
+fi
 
 cmake "${cmake_args[@]}"
 cmake --build "${build_dir}" --target vendors --parallel
@@ -152,6 +187,13 @@ case "${vendor}" in
         ;;
 esac
 
+if [[ "${is_android}" == 1 ]]; then
+    platform_toolchains="$(printf ',\n    \"androidApi\": \"%s\",\n    \"androidNdk\": \"%s\"' \
+        "${ANDROID_API}" "${android_ndk_version}")"
+else
+    platform_toolchains="$(printf ',\n    \"hostArchitecture\": \"%s\"' "${host_arch}")"
+fi
+
 cat > "${install_dir}/${vendor}/manifest.json" <<EOF
 {
   "schemaVersion": 1,
@@ -166,9 +208,7 @@ ${libraries_json}
   "toolchains": {
     "go": "${go_version}",
     "cmake": "${cmake_version}",
-    "ninja": "${ninja_version}",
-    "androidApi": "${ANDROID_API}",
-    "androidNdk": "${android_ndk_version}"
+    "ninja": "${ninja_version}"${platform_toolchains}
   }
 }
 EOF

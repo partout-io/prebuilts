@@ -58,14 +58,17 @@ Pass a vendor as the second argument to reproduce one CI job, for example:
 scripts/build-apple-xcframeworks.sh all openssl
 ```
 
-### Android and Windows
+### Android, Linux, and Windows
 
 Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, wg-go, and Wintun in four parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
+
+Linux builds wg-go natively for `x64` and `arm64` in separate jobs. They produce `wg-go-linux-x64.tar.gz` and `wg-go-linux-arm64.tar.gz`, each containing the shared library, public headers, and manifest for that architecture.
 
 The local scripts take the same vendor selection as CI, for example:
 
 ```sh
 scripts/build-vendors.sh android-arm64-v8a openssl
+scripts/build-vendors.sh linux-x64 wg-go
 scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 ```
 
@@ -73,4 +76,4 @@ scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 
 The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Wintun and toolchain versions are pinned by the CMake and workflow files.
 
-Every Android and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple XCFramework packages are accompanied by the equivalent vendor-specific manifest.
+Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple XCFramework packages are accompanied by the equivalent vendor-specific manifest.
