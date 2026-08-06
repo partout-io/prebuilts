@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-target="${1:?usage: build-partout-vendors.sh <target> [vendor]}"
-vendor="${2:-all}"
+target="${1:?usage: build-vendors.sh <target> <vendor>}"
+vendor="${2:?usage: build-vendors.sh <target> <vendor>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_dir="$(cd "${script_dir}/.." && pwd)"
 work_dir="${repository_dir}/.build/${target}/${vendor}"
@@ -27,26 +27,17 @@ build_openssl=OFF
 build_mbedtls=OFF
 build_wg_go=OFF
 case "${vendor}" in
-    all)
-        build_openssl=ON
-        build_mbedtls=ON
-        build_wg_go=ON
-        vendors=(openssl mbedtls wg-go)
-        ;;
     openssl)
         build_openssl=ON
-        vendors=(openssl)
         ;;
     mbedtls)
         build_mbedtls=ON
-        vendors=(mbedtls)
         ;;
     wg-go)
         build_wg_go=ON
-        vendors=(wg-go)
         ;;
     *)
-        echo "Unknown Android vendor: ${vendor}. Expected all, openssl, mbedtls, or wg-go." >&2
+        echo "Unknown Android vendor: ${vendor}. Expected openssl, mbedtls, or wg-go." >&2
         exit 1
         ;;
 esac
@@ -133,12 +124,10 @@ cmake "${cmake_args[@]}"
 cmake --build "${build_dir}" --target vendors --parallel
 cmake --install "${build_dir}"
 
-for selected_vendor in "${vendors[@]}"; do
-    [[ -d "${install_dir}/${selected_vendor}/include" ]] || {
-        echo "Missing ${selected_vendor} headers in ${install_dir}/${selected_vendor}" >&2
-        exit 1
-    }
-done
+[[ -d "${install_dir}/${vendor}/include" ]] || {
+    echo "Missing ${vendor} headers in ${install_dir}/${vendor}" >&2
+    exit 1
+}
 if [[ "${build_openssl}" == ON ]]; then
     [[ -d "${install_dir}/openssl/lib" ]] || { echo "Missing OpenSSL libraries" >&2; exit 1; }
 fi
@@ -161,14 +150,9 @@ case "${vendor}" in
     wg-go)
         libraries_json="    \"wg-go\": { \"sourceRef\": \"${prebuilts_ref}\", \"wireguardGoVersion\": \"${wireguard_go_version}\", \"linkage\": \"shared\" }"
         ;;
-    all)
-        libraries_json="    \"openssl\": { \"version\": \"${openssl_version}\", \"ref\": \"${openssl_ref}\", \"linkage\": \"shared\" },
-    \"mbedtls\": { \"version\": \"${mbedtls_version}\", \"ref\": \"${mbedtls_ref}\", \"linkage\": \"static\" },
-    \"wg-go\": { \"sourceRef\": \"${prebuilts_ref}\", \"wireguardGoVersion\": \"${wireguard_go_version}\", \"linkage\": \"shared\" }"
-        ;;
 esac
 
-cat > "${install_dir}/manifest.json" <<EOF
+cat > "${install_dir}/${vendor}/manifest.json" <<EOF
 {
   "schemaVersion": 1,
   "target": "${target}",
@@ -189,12 +173,8 @@ ${libraries_json}
 }
 EOF
 
-if [[ "${vendor}" == all ]]; then
-    package_name="partout-vendors-${target}.tar.gz"
-else
-    package_name="partout-vendor-${vendor}-${target}.tar.gz"
-fi
+package_name="${vendor}-${target}.tar.gz"
 package_path="${artifacts_dir}/${package_name}"
-tar -czf "${package_path}" -C "${install_dir}" .
+tar -czf "${package_path}" -C "${install_dir}/${vendor}" .
 sha256="$(shasum -a 256 "${package_path}" | awk '{print $1}')"
 printf '%s  %s\n' "${sha256}" "${package_name}" > "${package_path}.sha256"

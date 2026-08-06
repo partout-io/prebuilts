@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(PartoutPrebuilts LANGUAGES C)
+project(Prebuilts LANGUAGES C)
 
 include(ExternalProject)
 include(FetchContent)

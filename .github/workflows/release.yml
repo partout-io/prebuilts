@@ -13,7 +13,7 @@ on:
         default: false
         type: boolean
       vendor_prebuilts_run_id:
-        description: Full Vendor Prebuilts run ID. Leave blank for latest successful all-vendor run.
+        description: Vendor Prebuilts run ID. Leave blank for latest successful all-vendor run.
         required: false
         type: string
       windows_wxwidgets_run_id:
@@ -78,21 +78,6 @@ jobs:
           gh run download "${VENDORS_RUN_ID}" --dir release-assets/vendor-prebuilts
           gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
 
-          required_vendor_artifacts=(
-            partout-vendors-apple-openssl-xcframework
-            partout-vendors-apple-mbedtls-xcframework
-            partout-vendors-apple-wg-go-xcframework
-            partout-vendors-android-arm64-v8a
-            partout-vendors-windows-x64
-            partout-vendors-windows-arm64
-          )
-          for artifact in "${required_vendor_artifacts[@]}"; do
-            if [ ! -d "release-assets/vendor-prebuilts/${artifact}" ]; then
-              echo "Vendor Prebuilts run ${VENDORS_RUN_ID} is not a complete all-vendor run: missing ${artifact}" >&2
-              exit 1
-            fi
-          done
-
           find release-assets -type f -print | sort
 
       - name: Create release if needed
@@ -127,11 +112,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          mapfile -t assets < <(
-            find release-assets -type f \
-              ! -path '*/vendor-prebuilts/partout-vendor-build-*/*' \
-              | sort
-          )
+          mapfile -t assets < <(find release-assets -type f | sort)
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No release assets found." >&2
             exit 1

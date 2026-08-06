@@ -34,7 +34,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      package_matrix: ${{ steps.matrix.outputs.package_matrix }}
     steps:
       - name: Select vendor matrix
         id: matrix
@@ -60,30 +59,21 @@ jobs:
           windows_arm64_mbedtls='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64_wg_go='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64_wintun='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          package_android='{"target":"android-arm64-v8a"}'
-          package_windows_x64='{"target":"windows-x64"}'
-          package_windows_arm64='{"target":"windows-arm64"}'
-
           case "${vendor}" in
             all)
               matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
-              package_matrix='{"include":['"${package_android}"','"${package_windows_x64}"','"${package_windows_arm64}"']}'
               ;;
             openssl)
               matrix='{"include":['"${apple_openssl}"','"${android_openssl}"','"${windows_x64_openssl}"','"${windows_arm64_openssl}"']}'
-              package_matrix='{"include":[]}'
               ;;
             mbedtls)
               matrix='{"include":['"${apple_mbedtls}"','"${android_mbedtls}"','"${windows_x64_mbedtls}"','"${windows_arm64_mbedtls}"']}'
-              package_matrix='{"include":[]}'
               ;;
             wg-go)
               matrix='{"include":['"${apple_wg_go}"','"${android_wg_go}"','"${windows_x64_wg_go}"','"${windows_arm64_wg_go}"']}'
-              package_matrix='{"include":[]}'
               ;;
             wintun)
               matrix='{"include":['"${windows_x64_wintun}"','"${windows_arm64_wintun}"']}'
-              package_matrix='{"include":[]}'
               ;;
             *)
               echo "Unknown vendor: ${vendor}" >&2
@@ -92,7 +82,6 @@ jobs:
           esac
 
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
-          echo "package_matrix=${package_matrix}" >> "${GITHUB_OUTPUT}"
 
   build:
     name: ${{ matrix.build_host == 'apple' && matrix.target || format('{0}-{1}', matrix.target, matrix.vendor) }}
@@ -231,64 +220,21 @@ jobs:
       - name: Build Linux-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'linux'
         shell: bash
-        run: scripts/build-partout-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
+        run: scripts/build-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
 
       - name: Build static Apple ${{ matrix.vendor }} XCFramework
         if: matrix.build_host == 'apple'
         shell: bash
-        run: scripts/build-partout-apple-xcframeworks.sh all "${{ matrix.vendor }}"
+        run: scripts/build-apple-xcframeworks.sh all "${{ matrix.vendor }}"
 
       - name: Build Windows-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'windows'
         shell: pwsh
-        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}" -Vendor "${{ matrix.vendor }}"
-
-      - name: Upload Apple package
-        if: matrix.build_host == 'apple'
-        uses: actions/upload-artifact@v7
-        with:
-          name: partout-vendors-${{ matrix.target }}
-          path: artifacts/*
-          if-no-files-found: error
-
-      - name: Upload vendor build output
-        if: matrix.build_host != 'apple'
-        uses: actions/upload-artifact@v7
-        with:
-          name: partout-vendor-build-${{ matrix.target }}-${{ matrix.vendor }}
-          path: artifacts/*
-          if-no-files-found: error
-          retention-days: 1
-
-  package:
-    name: Package ${{ matrix.target }}
-    needs:
-      - select-matrix
-      - build
-    if: always() && !cancelled() && needs.select-matrix.outputs.package_matrix != '{"include":[]}'
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.select-matrix.outputs.package_matrix) }}
-
-    steps:
-      - name: Check out prebuilts
-        uses: actions/checkout@v7
-
-      - name: Download vendor build outputs
-        uses: actions/download-artifact@v8
-        with:
-          pattern: partout-vendor-build-${{ matrix.target }}-*
-          path: partials
-          merge-multiple: true
-
-      - name: Package vendors
-        shell: bash
-        run: scripts/package-partout-vendors.sh "${{ matrix.target }}" partials
+        run: scripts/build-vendors-windows.ps1 -Target "${{ matrix.target }}" -Vendor "${{ matrix.vendor }}"
 
       - name: Upload package
         uses: actions/upload-artifact@v7
         with:
-          name: partout-vendors-${{ matrix.target }}
+          name: ${{ matrix.build_host == 'apple' && format('{0}-apple-xcframework', matrix.vendor) || format('{0}-{1}', matrix.vendor, matrix.target) }}
           path: artifacts/*
           if-no-files-found: error

@@ -442,7 +442,7 @@ if [[ "${build_wg_go}" == ON ]]; then
 fi
 xcode_version="$(xcodebuild -version | tr '\n' ' ' | sed 's/ *$//')"
 go_version=""
-if command -v go >/dev/null 2>&1; then
+if [[ "${build_wg_go}" == ON ]] && command -v go >/dev/null 2>&1; then
     go_version="$(go env GOVERSION 2>/dev/null || go version)"
 fi
 cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
@@ -450,9 +450,9 @@ ninja_version="$(ninja --version)"
 
 manifest_scope="apple"
 if [[ "${vendor}" != all ]]; then
-    manifest_scope="apple-${vendor}"
+    manifest_scope="${vendor}-apple"
 fi
-manifest_path="${artifacts_dir}/partout-vendors-${manifest_scope}-manifest.json"
+manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
 {
     printf '{\n'
     printf '  "schemaVersion": 1,\n'
