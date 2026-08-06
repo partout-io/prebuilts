@@ -420,7 +420,11 @@ if [[ "${build_wg_go}" == ON ]]; then
     create_xcframework wg-go libwg-go wg-go
 fi
 
-prebuilts_repository="$(git -C "${repository_dir}" config --get remote.origin.url || true)"
+prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
+prebuilts_repository=""
+if [[ -n "${prebuilts_remote}" ]]; then
+    prebuilts_repository="$(git -C "${repository_dir}" remote get-url "${prebuilts_remote}")"
+fi
 prebuilts_ref="$(git -C "${repository_dir}" rev-parse HEAD)"
 if [[ "${build_openssl}" == ON ]]; then
     openssl_dir="${repository_dir}/vendors/openssl"

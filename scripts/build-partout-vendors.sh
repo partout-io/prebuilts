@@ -29,7 +29,11 @@ wg_go_dir="${repository_dir}/vendors/wg-go"
 [[ -f "${openssl_dir}/Configure" ]] || { echo "OpenSSL is not initialized." >&2; exit 1; }
 [[ -f "${mbedtls_dir}/tf-psa-crypto/CMakeLists.txt" ]] || { echo "Mbed TLS submodules are not initialized." >&2; exit 1; }
 
-prebuilts_repository="$(git -C "${repository_dir}" config --get remote.origin.url || true)"
+prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
+prebuilts_repository=""
+if [[ -n "${prebuilts_remote}" ]]; then
+    prebuilts_repository="$(git -C "${repository_dir}" remote get-url "${prebuilts_remote}")"
+fi
 prebuilts_ref="$(git -C "${repository_dir}" rev-parse HEAD)"
 openssl_ref="$(git -C "${openssl_dir}" rev-parse HEAD)"
 mbedtls_ref="$(git -C "${mbedtls_dir}" rev-parse HEAD)"

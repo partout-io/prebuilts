@@ -52,7 +52,13 @@ function Get-GitOutput {
     (($output | Select-Object -First 1) -as [string]).Trim()
 }
 
-$prebuiltsRepository = Get-GitOutput -Arguments @("config", "--get", "remote.origin.url")
+$prebuiltsRemote = ((& git remote) | Select-Object -First 1) -as [string]
+$prebuiltsRepository = if ($prebuiltsRemote) {
+    $prebuiltsRemote = $prebuiltsRemote.Trim()
+    Get-GitOutput -Arguments @("remote", "get-url", $prebuiltsRemote)
+} else {
+    ""
+}
 $prebuiltsRef = Get-GitOutput -Arguments @("rev-parse", "HEAD")
 $opensslDir = Join-Path $root "vendors\openssl"
 $mbedtlsDir = Join-Path $root "vendors\mbedtls"
