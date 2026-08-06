@@ -26,11 +26,13 @@ Partout contains no vendor sources or vendor build recipes. It consumes system l
 
 ## Workflows
 
-- `Vendor Prebuilts` builds the vendor distribution matrix.
+- `Vendor Prebuilts` (`vendors.yml`) builds the vendor distribution matrix.
 - `Windows wxWidgets` builds static wxWidgets libraries with MSVC.
 - `Release Prebuilts` downloads successful workflow artifacts and uploads them to a GitHub Release.
 
 All workflows are manual (`workflow_dispatch`) while the packaging format is settling. Build workflows upload GitHub Actions artifacts; the release workflow publishes those artifacts as release assets.
+
+The vendor workflow can build `all`, `openssl`, `mbedtls`, `wg-go`, or `wintun`. Selecting one vendor rebuilds it for every platform it supports. Only `all` runs aggregate the Android and Windows intermediates into the final monolithic target archives used by releases.
 
 ### Apple XCFrameworks
 

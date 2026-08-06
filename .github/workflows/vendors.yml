@@ -1,19 +1,20 @@
 name: Vendor Prebuilts
+run-name: Vendor Prebuilts (${{ inputs.vendor || 'all' }})
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Target to build
+      vendor:
+        description: Vendor to build across all supported platforms
         required: false
         type: choice
         default: all
         options:
           - all
-          - apple-xcframeworks
-          - android-arm64-v8a
-          - windows-x64
-          - windows-arm64
+          - openssl
+          - mbedtls
+          - wg-go
+          - wintun
 
 permissions:
   contents: read
@@ -35,13 +36,13 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       package_matrix: ${{ steps.matrix.outputs.package_matrix }}
     steps:
-      - name: Select target matrix
+      - name: Select vendor matrix
         id: matrix
         shell: bash
         run: |
-          target="${{ inputs.target }}"
-          if [ -z "${target}" ]; then
-            target="all"
+          vendor="${{ inputs.vendor }}"
+          if [ -z "${vendor}" ]; then
+            vendor="all"
           fi
 
           llvm_mingw_sha256="b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"
@@ -63,29 +64,29 @@ jobs:
           package_windows_x64='{"target":"windows-x64"}'
           package_windows_arm64='{"target":"windows-arm64"}'
 
-          case "${target}" in
+          case "${vendor}" in
             all)
               matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
               package_matrix='{"include":['"${package_android}"','"${package_windows_x64}"','"${package_windows_arm64}"']}'
               ;;
-            apple-xcframeworks)
-              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"']}'
+            openssl)
+              matrix='{"include":['"${apple_openssl}"','"${android_openssl}"','"${windows_x64_openssl}"','"${windows_arm64_openssl}"']}'
               package_matrix='{"include":[]}'
               ;;
-            android-arm64-v8a)
-              matrix='{"include":['"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"']}'
-              package_matrix='{"include":['"${package_android}"']}'
+            mbedtls)
+              matrix='{"include":['"${apple_mbedtls}"','"${android_mbedtls}"','"${windows_x64_mbedtls}"','"${windows_arm64_mbedtls}"']}'
+              package_matrix='{"include":[]}'
               ;;
-            windows-x64)
-              matrix='{"include":['"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"']}'
-              package_matrix='{"include":['"${package_windows_x64}"']}'
+            wg-go)
+              matrix='{"include":['"${apple_wg_go}"','"${android_wg_go}"','"${windows_x64_wg_go}"','"${windows_arm64_wg_go}"']}'
+              package_matrix='{"include":[]}'
               ;;
-            windows-arm64)
-              matrix='{"include":['"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
-              package_matrix='{"include":['"${package_windows_arm64}"']}'
+            wintun)
+              matrix='{"include":['"${windows_x64_wintun}"','"${windows_arm64_wintun}"']}'
+              package_matrix='{"include":[]}'
               ;;
             *)
-              echo "Unknown target: ${target}" >&2
+              echo "Unknown vendor: ${vendor}" >&2
               exit 1
               ;;
           esac

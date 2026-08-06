@@ -13,7 +13,7 @@ on:
         default: false
         type: boolean
       vendor_prebuilts_run_id:
-        description: Vendor Prebuilts run ID. Leave blank for latest successful run.
+        description: Full Vendor Prebuilts run ID. Leave blank for latest successful all-vendor run.
         required: false
         type: string
       windows_wxwidgets_run_id:
@@ -42,7 +42,11 @@ jobs:
 
           vendors_run_id="${VENDOR_PREBUILTS_RUN_ID}"
           if [ -z "${vendors_run_id}" ]; then
-            vendors_run_id="$(gh run list --workflow partout-vendors.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            vendors_run_id="$(
+              gh run list --workflow vendors.yml --status success --limit 100 \
+                --json databaseId,displayTitle \
+                --jq 'map(select(.displayTitle == "Vendor Prebuilts (all)")) | .[0].databaseId'
+            )"
           fi
 
           windows_run_id="${WINDOWS_WXWIDGETS_RUN_ID}"
@@ -73,6 +77,22 @@ jobs:
           mkdir -p release-assets/vendor-prebuilts release-assets/windows-wxwidgets
           gh run download "${VENDORS_RUN_ID}" --dir release-assets/vendor-prebuilts
           gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
+
+          required_vendor_artifacts=(
+            partout-vendors-apple-openssl-xcframework
+            partout-vendors-apple-mbedtls-xcframework
+            partout-vendors-apple-wg-go-xcframework
+            partout-vendors-android-arm64-v8a
+            partout-vendors-windows-x64
+            partout-vendors-windows-arm64
+          )
+          for artifact in "${required_vendor_artifacts[@]}"; do
+            if [ ! -d "release-assets/vendor-prebuilts/${artifact}" ]; then
+              echo "Vendor Prebuilts run ${VENDORS_RUN_ID} is not a complete all-vendor run: missing ${artifact}" >&2
+              exit 1
+            fi
+          done
+
           find release-assets -type f -print | sort
 
       - name: Create release if needed
