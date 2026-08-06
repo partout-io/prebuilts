@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  ANDROID_API: "28"
+  ANDROID_API: "24"
   ANDROID_NDK_VERSION: "30.0.14904198"
   GO_VERSION: "1.25.12"
   LLVM_MINGW_VERSION: "20260616"
