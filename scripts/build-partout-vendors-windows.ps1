@@ -1,7 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("windows-x64", "windows-arm64")]
-    [string]$Target
+    [string]$Target,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("openssl", "mbedtls", "wg-go", "wintun")]
+    [string]$Vendor
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,17 +15,16 @@ $llvmMingwVersion = $env:LLVM_MINGW_VERSION
 $llvmMingwRoot = $env:LLVM_MINGW_ROOT
 $runtimeLibrary = $env:MSVC_RUNTIME_LIBRARY
 
-if (-not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required" }
-if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required" }
+if ($Vendor -eq "wg-go" -and -not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required for wg-go" }
+if ($Vendor -eq "wg-go" -and -not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required for wg-go" }
 if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required" }
 
 $root = (Get-Location).Path
-$workDir = Join-Path $root ".build\$Target"
+$workDir = Join-Path $root ".build\$Target\$Vendor"
 $buildDir = Join-Path $workDir "cmake-build"
 $vendorOutputDir = Join-Path $workDir "vendor-output"
 $installDir = Join-Path $workDir "install"
 $artifactsDir = Join-Path $root "artifacts"
-$vendors = @("openssl", "mbedtls", "wg-go", "wintun")
 
 switch ($Target) {
     "windows-x64" {
@@ -62,20 +65,30 @@ $prebuiltsRepository = if ($prebuiltsRemote) {
 $prebuiltsRef = Get-GitOutput -Arguments @("rev-parse", "HEAD")
 $opensslDir = Join-Path $root "vendors\openssl"
 $mbedtlsDir = Join-Path $root "vendors\mbedtls"
-$opensslRef = Get-GitOutput -Arguments @("-C", $opensslDir, "rev-parse", "HEAD")
-$mbedtlsRef = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "rev-parse", "HEAD")
-$opensslVersion = Get-GitOutput -Arguments @("-C", $opensslDir, "describe", "--tags", "--always", "--dirty")
-$mbedtlsVersion = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "describe", "--tags", "--always", "--dirty")
-$wireGuardGoSum = Join-Path $root "vendors\wg-go\go.sum"
+$opensslRef = ""
+$mbedtlsRef = ""
+$opensslVersion = ""
+$mbedtlsVersion = ""
 $wireGuardGoVersion = ""
-foreach ($line in Get-Content $wireGuardGoSum) {
-    if ($line -match "^\s*golang\.zx2c4\.com/wireguard\s+(\S+)\s+" -and $Matches[1] -notlike "*/go.mod") {
-        $wireGuardGoVersion = $Matches[1]
-        break
-    }
+if ($Vendor -eq "openssl") {
+    $opensslRef = Get-GitOutput -Arguments @("-C", $opensslDir, "rev-parse", "HEAD")
+    $opensslVersion = Get-GitOutput -Arguments @("-C", $opensslDir, "describe", "--tags", "--always", "--dirty")
 }
-if (-not $wireGuardGoVersion) {
-    throw "Unable to resolve golang.zx2c4.com/wireguard from $wireGuardGoSum"
+if ($Vendor -eq "mbedtls") {
+    $mbedtlsRef = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "rev-parse", "HEAD")
+    $mbedtlsVersion = Get-GitOutput -Arguments @("-C", $mbedtlsDir, "describe", "--tags", "--always", "--dirty")
+}
+if ($Vendor -eq "wg-go") {
+    $wireGuardGoSum = Join-Path $root "vendors\wg-go\go.sum"
+    foreach ($line in Get-Content $wireGuardGoSum) {
+        if ($line -match "^\s*golang\.zx2c4\.com/wireguard\s+(\S+)\s+" -and $Matches[1] -notlike "*/go.mod") {
+            $wireGuardGoVersion = $Matches[1]
+            break
+        }
+    }
+    if (-not $wireGuardGoVersion) {
+        throw "Unable to resolve golang.zx2c4.com/wireguard from $wireGuardGoSum"
+    }
 }
 
 $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
@@ -112,15 +125,15 @@ if (Get-Command ninja -ErrorAction SilentlyContinue) {
     $ninjaVersion = ((& ninja --version) | Select-Object -First 1).Trim()
 }
 $goVersion = ""
-if (Get-Command go -ErrorAction SilentlyContinue) {
+if ($Vendor -eq "wg-go" -and (Get-Command go -ErrorAction SilentlyContinue)) {
     $goVersion = ((& go env GOVERSION) | Select-Object -First 1).Trim()
 }
 $nasmVersion = ""
-if (Get-Command nasm -ErrorAction SilentlyContinue) {
+if ($Vendor -eq "openssl" -and (Get-Command nasm -ErrorAction SilentlyContinue)) {
     $nasmVersion = ((& nasm -v) | Select-Object -First 1).Trim()
 }
 
-Remove-Item -Recurse -Force $workDir, $artifactsDir -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $buildDir, $vendorOutputDir, $installDir, $artifactsDir | Out-Null
 
 function ConvertTo-CmdArgument {
@@ -171,6 +184,11 @@ function Assert-PathExists {
     }
 }
 
+$buildOpenSSL = if ($Vendor -eq "openssl") { "ON" } else { "OFF" }
+$buildMbedTLS = if ($Vendor -eq "mbedtls") { "ON" } else { "OFF" }
+$buildWgGo = if ($Vendor -eq "wg-go") { "ON" } else { "OFF" }
+$buildWintun = if ($Vendor -eq "wintun") { "ON" } else { "OFF" }
+
 $cmakeArgs = @(
     "-S", $root,
     "-B", $buildDir,
@@ -181,10 +199,10 @@ $cmakeArgs = @(
     "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary",
     "-DCMAKE_SYSTEM_PROCESSOR=$cmakeProcessor",
     "-DPPV_OUTPUT=$vendorOutputDir",
-    "-DPPV_BUILD_OPENSSL=ON",
-    "-DPPV_BUILD_MBEDTLS=ON",
-    "-DPPV_BUILD_WG_GO=ON",
-    "-DPPV_BUILD_WINTUN=ON"
+    "-DPPV_BUILD_OPENSSL=$buildOpenSSL",
+    "-DPPV_BUILD_MBEDTLS=$buildMbedTLS",
+    "-DPPV_BUILD_WG_GO=$buildWgGo",
+    "-DPPV_BUILD_WINTUN=$buildWintun"
 )
 
 $configureCommand = "cmake " + (Join-CmdArguments $cmakeArgs)
@@ -230,25 +248,34 @@ function Assert-VendorPackage {
 
 function New-Manifest {
     $libraries = [ordered]@{}
-    $libraries["openssl"] = [ordered]@{
-        version = $opensslVersion
-        ref = $opensslRef
-        linkage = "shared"
-    }
-    $libraries["mbedtls"] = [ordered]@{
-        version = $mbedtlsVersion
-        ref = $mbedtlsRef
-        linkage = "static"
-    }
-    $libraries["wg-go"] = [ordered]@{
-        sourceRef = $prebuiltsRef
-        wireguardGoVersion = $wireGuardGoVersion
-        linkage = "shared"
+    switch ($Vendor) {
+        "openssl" {
+            $libraries["openssl"] = [ordered]@{
+                version = $opensslVersion
+                ref = $opensslRef
+                linkage = "shared"
+            }
+        }
+        "mbedtls" {
+            $libraries["mbedtls"] = [ordered]@{
+                version = $mbedtlsVersion
+                ref = $mbedtlsRef
+                linkage = "static"
+            }
+        }
+        "wg-go" {
+            $libraries["wg-go"] = [ordered]@{
+                sourceRef = $prebuiltsRef
+                wireguardGoVersion = $wireGuardGoVersion
+                linkage = "shared"
+            }
+        }
     }
 
     $manifest = [ordered]@{
         schemaVersion = 1
         target = $Target
+        vendor = $Vendor
         os = "windows"
         arch = $arch
         prebuilts = [ordered]@{
@@ -275,13 +302,11 @@ function New-Manifest {
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $installDir "manifest.json")
 }
 
-foreach ($vendor in $vendors) {
-    Assert-VendorPackage -Vendor $vendor
-}
+Assert-VendorPackage -Vendor $Vendor
 
 New-Manifest
 
-$packageName = "partout-vendors-$Target.zip"
+$packageName = "partout-vendor-$Vendor-$Target.zip"
 $packagePath = Join-Path $artifactsDir $packageName
 Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $packagePath -Force
 

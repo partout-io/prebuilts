@@ -54,7 +54,16 @@ Pass a vendor as the second argument to reproduce one CI job, for example:
 scripts/build-partout-apple-xcframeworks.sh all openssl
 ```
 
-The current non-Apple targets are Android `arm64-v8a` and Windows `x64`/`arm64`.
+### Android and Windows
+
+Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, wg-go, and Wintun in four parallel jobs. Every build job configures only its selected vendor. A lightweight aggregation job then combines those outputs into the existing `partout-vendors-<target>` archive, checksum, and manifest, so Partout still downloads one archive per target.
+
+The local scripts take the same vendor selection as CI, for example:
+
+```sh
+scripts/build-partout-vendors.sh android-arm64-v8a openssl
+scripts/build-partout-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
+```
 
 ## Version Pins
 

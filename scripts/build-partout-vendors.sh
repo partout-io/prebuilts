@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-target="${1:?usage: build-partout-vendors.sh <target>}"
+target="${1:?usage: build-partout-vendors.sh <target> [vendor]}"
+vendor="${2:-all}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_dir="$(cd "${script_dir}/.." && pwd)"
-work_dir="${repository_dir}/.build/${target}"
+work_dir="${repository_dir}/.build/${target}/${vendor}"
 build_dir="${work_dir}/cmake-build"
 vendor_output_dir="${work_dir}/vendor-output"
 install_dir="${work_dir}/install"
 artifacts_dir="${repository_dir}/artifacts"
-vendors=(openssl mbedtls wg-go)
 
 case "${target}" in
     android-arm64-v8a)
@@ -23,11 +23,45 @@ case "${target}" in
         ;;
 esac
 
+build_openssl=OFF
+build_mbedtls=OFF
+build_wg_go=OFF
+case "${vendor}" in
+    all)
+        build_openssl=ON
+        build_mbedtls=ON
+        build_wg_go=ON
+        vendors=(openssl mbedtls wg-go)
+        ;;
+    openssl)
+        build_openssl=ON
+        vendors=(openssl)
+        ;;
+    mbedtls)
+        build_mbedtls=ON
+        vendors=(mbedtls)
+        ;;
+    wg-go)
+        build_wg_go=ON
+        vendors=(wg-go)
+        ;;
+    *)
+        echo "Unknown Android vendor: ${vendor}. Expected all, openssl, mbedtls, or wg-go." >&2
+        exit 1
+        ;;
+esac
+
 openssl_dir="${repository_dir}/vendors/openssl"
 mbedtls_dir="${repository_dir}/vendors/mbedtls"
 wg_go_dir="${repository_dir}/vendors/wg-go"
-[[ -f "${openssl_dir}/Configure" ]] || { echo "OpenSSL is not initialized." >&2; exit 1; }
-[[ -f "${mbedtls_dir}/tf-psa-crypto/CMakeLists.txt" ]] || { echo "Mbed TLS submodules are not initialized." >&2; exit 1; }
+if [[ "${build_openssl}" == ON && ! -f "${openssl_dir}/Configure" ]]; then
+    echo "OpenSSL is not initialized." >&2
+    exit 1
+fi
+if [[ "${build_mbedtls}" == ON && ! -f "${mbedtls_dir}/tf-psa-crypto/CMakeLists.txt" ]]; then
+    echo "Mbed TLS submodules are not initialized." >&2
+    exit 1
+fi
 
 prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
 prebuilts_repository=""
@@ -35,18 +69,29 @@ if [[ -n "${prebuilts_remote}" ]]; then
     prebuilts_repository="$(git -C "${repository_dir}" remote get-url "${prebuilts_remote}")"
 fi
 prebuilts_ref="$(git -C "${repository_dir}" rev-parse HEAD)"
-openssl_ref="$(git -C "${openssl_dir}" rev-parse HEAD)"
-mbedtls_ref="$(git -C "${mbedtls_dir}" rev-parse HEAD)"
-openssl_version="$(git -C "${openssl_dir}" describe --tags --always --dirty)"
-mbedtls_version="$(git -C "${mbedtls_dir}" describe --tags --always --dirty)"
-wireguard_go_version="$(awk '$1 == "golang.zx2c4.com/wireguard" && $2 !~ /\/go\.mod$/ { print $2; exit }' "${wg_go_dir}/go.sum")"
-if [[ -z "${wireguard_go_version}" ]]; then
-    echo "Unable to resolve golang.zx2c4.com/wireguard from ${wg_go_dir}/go.sum" >&2
-    exit 1
+openssl_ref=""
+openssl_version=""
+mbedtls_ref=""
+mbedtls_version=""
+wireguard_go_version=""
+if [[ "${build_openssl}" == ON ]]; then
+    openssl_ref="$(git -C "${openssl_dir}" rev-parse HEAD)"
+    openssl_version="$(git -C "${openssl_dir}" describe --tags --always --dirty)"
+fi
+if [[ "${build_mbedtls}" == ON ]]; then
+    mbedtls_ref="$(git -C "${mbedtls_dir}" rev-parse HEAD)"
+    mbedtls_version="$(git -C "${mbedtls_dir}" describe --tags --always --dirty)"
+fi
+if [[ "${build_wg_go}" == ON ]]; then
+    wireguard_go_version="$(awk '$1 == "golang.zx2c4.com/wireguard" && $2 !~ /\/go\.mod$/ { print $2; exit }' "${wg_go_dir}/go.sum")"
+    if [[ -z "${wireguard_go_version}" ]]; then
+        echo "Unable to resolve golang.zx2c4.com/wireguard from ${wg_go_dir}/go.sum" >&2
+        exit 1
+    fi
 fi
 
 go_version=""
-if command -v go >/dev/null 2>&1; then
+if [[ "${build_wg_go}" == ON ]] && command -v go >/dev/null 2>&1; then
     go_version="$(go env GOVERSION 2>/dev/null || go version)"
 fi
 cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
@@ -64,7 +109,7 @@ else
 fi
 android_ndk_version="$(basename "${ANDROID_NDK_ROOT}")"
 
-rm -rf "${work_dir}" "${artifacts_dir}"
+rm -rf "${work_dir}"
 mkdir -p "${build_dir}" "${vendor_output_dir}" "${install_dir}" "${artifacts_dir}"
 
 cmake_args=(
@@ -78,9 +123,9 @@ cmake_args=(
     -DANDROID_PLATFORM="android-${ANDROID_API:?ANDROID_API is required}"
     -DANDROID_STL=c++_shared
     -DANDROID_NATIVE_API_LEVEL="${ANDROID_API}"
-    -DPPV_BUILD_MBEDTLS=ON
-    -DPPV_BUILD_OPENSSL=ON
-    -DPPV_BUILD_WG_GO=ON
+    -DPPV_BUILD_MBEDTLS="${build_mbedtls}"
+    -DPPV_BUILD_OPENSSL="${build_openssl}"
+    -DPPV_BUILD_WG_GO="${build_wg_go}"
     -DPPV_OUTPUT="${vendor_output_dir}"
 )
 
@@ -88,29 +133,51 @@ cmake "${cmake_args[@]}"
 cmake --build "${build_dir}" --target vendors --parallel
 cmake --install "${build_dir}"
 
-for vendor in "${vendors[@]}"; do
-    [[ -d "${install_dir}/${vendor}/include" ]] || {
-        echo "Missing ${vendor} headers in ${install_dir}/${vendor}" >&2
+for selected_vendor in "${vendors[@]}"; do
+    [[ -d "${install_dir}/${selected_vendor}/include" ]] || {
+        echo "Missing ${selected_vendor} headers in ${install_dir}/${selected_vendor}" >&2
         exit 1
     }
 done
-[[ -d "${install_dir}/openssl/lib" ]] || { echo "Missing OpenSSL libraries" >&2; exit 1; }
-[[ -f "${install_dir}/mbedtls/lib/libmbedtls.a" ]] || { echo "Missing libmbedtls.a" >&2; exit 1; }
-[[ -f "${install_dir}/mbedtls/lib/libmbedx509.a" ]] || { echo "Missing libmbedx509.a" >&2; exit 1; }
-[[ -f "${install_dir}/mbedtls/lib/libmbedcrypto.a" ]] || { echo "Missing libmbedcrypto.a" >&2; exit 1; }
-[[ -f "${install_dir}/wg-go/lib/libwg-go.so" ]] || { echo "Missing libwg-go.so" >&2; exit 1; }
+if [[ "${build_openssl}" == ON ]]; then
+    [[ -d "${install_dir}/openssl/lib" ]] || { echo "Missing OpenSSL libraries" >&2; exit 1; }
+fi
+if [[ "${build_mbedtls}" == ON ]]; then
+    [[ -f "${install_dir}/mbedtls/lib/libmbedtls.a" ]] || { echo "Missing libmbedtls.a" >&2; exit 1; }
+    [[ -f "${install_dir}/mbedtls/lib/libmbedx509.a" ]] || { echo "Missing libmbedx509.a" >&2; exit 1; }
+    [[ -f "${install_dir}/mbedtls/lib/libmbedcrypto.a" ]] || { echo "Missing libmbedcrypto.a" >&2; exit 1; }
+fi
+if [[ "${build_wg_go}" == ON ]]; then
+    [[ -f "${install_dir}/wg-go/lib/libwg-go.so" ]] || { echo "Missing libwg-go.so" >&2; exit 1; }
+fi
+
+case "${vendor}" in
+    openssl)
+        libraries_json="    \"openssl\": { \"version\": \"${openssl_version}\", \"ref\": \"${openssl_ref}\", \"linkage\": \"shared\" }"
+        ;;
+    mbedtls)
+        libraries_json="    \"mbedtls\": { \"version\": \"${mbedtls_version}\", \"ref\": \"${mbedtls_ref}\", \"linkage\": \"static\" }"
+        ;;
+    wg-go)
+        libraries_json="    \"wg-go\": { \"sourceRef\": \"${prebuilts_ref}\", \"wireguardGoVersion\": \"${wireguard_go_version}\", \"linkage\": \"shared\" }"
+        ;;
+    all)
+        libraries_json="    \"openssl\": { \"version\": \"${openssl_version}\", \"ref\": \"${openssl_ref}\", \"linkage\": \"shared\" },
+    \"mbedtls\": { \"version\": \"${mbedtls_version}\", \"ref\": \"${mbedtls_ref}\", \"linkage\": \"static\" },
+    \"wg-go\": { \"sourceRef\": \"${prebuilts_ref}\", \"wireguardGoVersion\": \"${wireguard_go_version}\", \"linkage\": \"shared\" }"
+        ;;
+esac
 
 cat > "${install_dir}/manifest.json" <<EOF
 {
   "schemaVersion": 1,
   "target": "${target}",
+  "vendor": "${vendor}",
   "os": "${os}",
   "arch": "${arch}",
   "prebuilts": { "repository": "${prebuilts_repository}", "ref": "${prebuilts_ref}" },
   "libraries": {
-    "openssl": { "version": "${openssl_version}", "ref": "${openssl_ref}", "linkage": "shared" },
-    "mbedtls": { "version": "${mbedtls_version}", "ref": "${mbedtls_ref}", "linkage": "static" },
-    "wg-go": { "sourceRef": "${prebuilts_ref}", "wireguardGoVersion": "${wireguard_go_version}", "linkage": "shared" }
+${libraries_json}
   },
   "toolchains": {
     "go": "${go_version}",
@@ -122,7 +189,11 @@ cat > "${install_dir}/manifest.json" <<EOF
 }
 EOF
 
-package_name="partout-vendors-${target}.tar.gz"
+if [[ "${vendor}" == all ]]; then
+    package_name="partout-vendors-${target}.tar.gz"
+else
+    package_name="partout-vendor-${vendor}-${target}.tar.gz"
+fi
 package_path="${artifacts_dir}/${package_name}"
 tar -czf "${package_path}" -C "${install_dir}" .
 sha256="$(shasum -a 256 "${package_path}" | awk '{print $1}')"

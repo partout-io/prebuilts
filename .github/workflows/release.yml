@@ -107,7 +107,11 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          mapfile -t assets < <(find release-assets -type f | sort)
+          mapfile -t assets < <(
+            find release-assets -type f \
+              ! -path '*/vendor-prebuilts/partout-vendor-build-*/*' \
+              | sort
+          )
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No release assets found." >&2
             exit 1

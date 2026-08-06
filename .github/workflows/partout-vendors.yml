@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      package_matrix: ${{ steps.matrix.outputs.package_matrix }}
     steps:
       - name: Select target matrix
         id: matrix
@@ -47,25 +48,41 @@ jobs:
           apple_openssl='{"target":"apple-openssl-xcframework","runner":"macos-26","build_host":"apple","vendor":"openssl"}'
           apple_mbedtls='{"target":"apple-mbedtls-xcframework","runner":"macos-26","build_host":"apple","vendor":"mbedtls"}'
           apple_wg_go='{"target":"apple-wg-go-xcframework","runner":"macos-26","build_host":"apple","vendor":"wg-go"}'
-          android_arm64_v8a='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux"}'
-          windows_x64='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_arm64='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          android_openssl='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"openssl"}'
+          android_mbedtls='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"mbedtls"}'
+          android_wg_go='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"wg-go"}'
+          windows_x64_openssl='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_x64_mbedtls='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_x64_wg_go='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_x64_wintun='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_arm64_openssl='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_arm64_mbedtls='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_arm64_wg_go='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_arm64_wintun='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          package_android='{"target":"android-arm64-v8a"}'
+          package_windows_x64='{"target":"windows-x64"}'
+          package_windows_arm64='{"target":"windows-arm64"}'
 
           case "${target}" in
             all)
-              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_arm64_v8a}"','"${windows_x64}"','"${windows_arm64}"']}'
+              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
+              package_matrix='{"include":['"${package_android}"','"${package_windows_x64}"','"${package_windows_arm64}"']}'
               ;;
             apple-xcframeworks)
               matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"']}'
+              package_matrix='{"include":[]}'
               ;;
             android-arm64-v8a)
-              matrix='{"include":['"${android_arm64_v8a}"']}'
+              matrix='{"include":['"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"']}'
+              package_matrix='{"include":['"${package_android}"']}'
               ;;
             windows-x64)
-              matrix='{"include":['"${windows_x64}"']}'
+              matrix='{"include":['"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"']}'
+              package_matrix='{"include":['"${package_windows_x64}"']}'
               ;;
             windows-arm64)
-              matrix='{"include":['"${windows_arm64}"']}'
+              matrix='{"include":['"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
+              package_matrix='{"include":['"${package_windows_arm64}"']}'
               ;;
             *)
               echo "Unknown target: ${target}" >&2
@@ -74,9 +91,10 @@ jobs:
           esac
 
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "package_matrix=${package_matrix}" >> "${GITHUB_OUTPUT}"
 
   build:
-    name: ${{ matrix.target }}
+    name: ${{ matrix.target }}-${{ matrix.vendor }}
     needs: select-matrix
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
@@ -90,10 +108,10 @@ jobs:
 
       - name: Prepare vendor sources
         shell: bash
-        run: scripts/checkout-vendors.sh
+        run: scripts/checkout-vendors.sh "${{ matrix.vendor }}"
 
       - name: Set up Go from runner image
-        if: matrix.build_host != 'apple' || matrix.vendor == 'wg-go'
+        if: matrix.vendor == 'wg-go'
         uses: actions/setup-go@v6
         with:
           go-version: 'stable'
@@ -117,14 +135,14 @@ jobs:
 
       - name: Restore llvm-mingw cache
         id: llvm-mingw-cache
-        if: matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
           key: llvm-mingw-windows-${{ matrix.target }}-${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_sha256 }}
 
       - name: Set up llvm-mingw for wg-go
-        if: matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
         shell: pwsh
         run: |
           $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_host_arch }}.zip"
@@ -161,7 +179,7 @@ jobs:
           & $clang --version
 
       - name: Save llvm-mingw cache
-        if: matrix.build_host == 'windows' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
@@ -169,14 +187,14 @@ jobs:
 
       - name: Restore NASM cache
         id: nasm-cache
-        if: matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'openssl'
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/nasm/${{ env.NASM_VERSION }}
           key: nasm-windows-${{ matrix.target }}-${{ env.NASM_VERSION }}-${{ env.NASM_SOURCE_SHA256 }}
 
       - name: Set up NASM for OpenSSL
-        if: matrix.build_host == 'windows'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'openssl'
         shell: pwsh
         run: |
           $nasmRoot = Join-Path (Join-Path $env:RUNNER_TOOL_CACHE "nasm") $env:NASM_VERSION
@@ -203,7 +221,7 @@ jobs:
           nasm -v
 
       - name: Save NASM cache
-        if: matrix.build_host == 'windows' && steps.nasm-cache.outputs.cache-hit != 'true'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'openssl' && steps.nasm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/nasm/${{ env.NASM_VERSION }}
@@ -212,7 +230,7 @@ jobs:
       - name: Build Linux-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'linux'
         shell: bash
-        run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
+        run: scripts/build-partout-vendors.sh "${{ matrix.target }}" "${{ matrix.vendor }}"
 
       - name: Build static Apple ${{ matrix.vendor }} XCFramework
         if: matrix.build_host == 'apple'
@@ -222,7 +240,50 @@ jobs:
       - name: Build Windows-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'windows'
         shell: pwsh
-        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}"
+        run: scripts/build-partout-vendors-windows.ps1 -Target "${{ matrix.target }}" -Vendor "${{ matrix.vendor }}"
+
+      - name: Upload Apple package
+        if: matrix.build_host == 'apple'
+        uses: actions/upload-artifact@v7
+        with:
+          name: partout-vendors-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+
+      - name: Upload vendor build output
+        if: matrix.build_host != 'apple'
+        uses: actions/upload-artifact@v7
+        with:
+          name: partout-vendor-build-${{ matrix.target }}-${{ matrix.vendor }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    name: Package ${{ matrix.target }}
+    needs:
+      - select-matrix
+      - build
+    if: always() && !cancelled() && needs.select-matrix.outputs.package_matrix != '{"include":[]}'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select-matrix.outputs.package_matrix) }}
+
+    steps:
+      - name: Check out prebuilts
+        uses: actions/checkout@v7
+
+      - name: Download vendor build outputs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: partout-vendor-build-${{ matrix.target }}-*
+          path: partials
+          merge-multiple: true
+
+      - name: Package vendors
+        shell: bash
+        run: scripts/package-partout-vendors.sh "${{ matrix.target }}" partials
 
       - name: Upload package
         uses: actions/upload-artifact@v7
