@@ -335,7 +335,7 @@ assert_common_headers() {
 
 prepare_openssl_headers() {
     local group="${1}"
-    local headers_dir="${work_dir}/groups/${group}/headers/openssl"
+    local headers_dir="${work_dir}/groups/${group}/headers/openssl/openssl"
     local first_slice=""
     local slice
     local arch
@@ -346,11 +346,11 @@ prepare_openssl_headers() {
         if [[ -z "${first_slice}" ]]; then
             first_slice="${slice}"
             mkdir -p "${headers_dir}"
-            rsync -a "${work_dir}/slices/${slice}/vendors/openssl/include/" "${headers_dir}/"
+            rsync -a "${work_dir}/slices/${slice}/vendors/openssl/include/openssl/" "${headers_dir}/"
         fi
 
         arch="$(slice_architecture "${slice}")"
-        configuration_header="${headers_dir}/openssl/configuration-${arch}.h"
+        configuration_header="${headers_dir}/configuration-${arch}.h"
         cp "${work_dir}/slices/${slice}/vendors/openssl/include/openssl/configuration.h" \
             "${configuration_header}"
         configuration_headers+=("${configuration_header}")
@@ -366,7 +366,7 @@ prepare_openssl_headers() {
             printf '#else\n'
             printf '#error Unsupported architecture\n'
             printf '#endif\n'
-        } > "${headers_dir}/openssl/configuration.h"
+        } > "${headers_dir}/configuration.h"
     fi
 
     cp "${modulemaps_dir}/openssl.modulemap" "${headers_dir}/module.modulemap"
@@ -375,7 +375,8 @@ prepare_openssl_headers() {
 prepare_common_headers() {
     local vendor="${1}"
     local group="${2}"
-    local modulemap="${3}"
+    local module="${3}"
+    local modulemap="${4}"
     local first_slice
     local headers_dir="${work_dir}/groups/${group}/headers/${vendor}"
 
@@ -384,8 +385,22 @@ prepare_common_headers() {
     mkdir -p "${headers_dir}"
     rsync -a "${work_dir}/slices/${first_slice}/vendors/${vendor}/include/" "${headers_dir}/"
     if [[ -n "${modulemap}" ]]; then
-        cp "${modulemap}" "${headers_dir}/module.modulemap"
+        cp "${modulemap}" "${headers_dir}/${module}/module.modulemap"
     fi
+}
+
+prepare_wg_go_headers() {
+    local group="${1}"
+    local first_slice
+    local headers_dir="${work_dir}/groups/${group}/headers/wg-go/wg_go"
+
+    first_slice="$(group_slices "${group}" | sed -n '1p')"
+    assert_common_headers wg-go "${group}"
+    mkdir -p "${headers_dir}"
+    rsync -a \
+        "${work_dir}/slices/${first_slice}/vendors/wg-go/include/wg_go/" \
+        "${headers_dir}/"
+    cp "${modulemaps_dir}/wg-go.modulemap" "${headers_dir}/module.modulemap"
 }
 
 for group in "${groups[@]}"; do
@@ -395,11 +410,11 @@ for group in "${groups[@]}"; do
     fi
     if [[ "${build_mbedtls}" == ON ]]; then
         merge_group_library "${group}" libmbedtls
-        prepare_common_headers mbedtls "${group}" "${modulemaps_dir}/mbedtls.modulemap"
+        prepare_common_headers mbedtls "${group}" mbedtls "${modulemaps_dir}/mbedtls.modulemap"
     fi
     if [[ "${build_wg_go}" == ON ]]; then
         merge_group_library "${group}" libwg-go
-        prepare_common_headers wg-go "${group}" ""
+        prepare_wg_go_headers "${group}"
     fi
 done
 
@@ -407,6 +422,7 @@ create_xcframework() {
     local name="${1}"
     local library="${2}"
     local headers="${3}"
+    local module="${4}"
     local output="${work_dir}/${name}.xcframework"
     local arguments=(-create-xcframework)
     local group
@@ -430,6 +446,14 @@ create_xcframework() {
         echo "Unexpected static library count in ${output}" >&2
         exit 1
     fi
+    if [[ "$(find "${output}" -type f -path "*/Headers/${module}/module.modulemap" | wc -l | tr -d ' ')" -ne "${#groups[@]}" ]]; then
+        echo "Unexpected module map layout in ${output}: expected Headers/${module}/module.modulemap" >&2
+        exit 1
+    fi
+    if find "${output}" -type f -path '*/Headers/module.modulemap' -print | grep -q .; then
+        echo "Flattened module map found in ${output}" >&2
+        exit 1
+    fi
 
     local archive_name="${name}.xcframework.zip"
     local archive_path="${artifacts_dir}/${archive_name}"
@@ -441,13 +465,13 @@ create_xcframework() {
 }
 
 if [[ "${build_openssl}" == ON ]]; then
-    create_xcframework openssl libopenssl openssl
+    create_xcframework openssl libopenssl openssl openssl
 fi
 if [[ "${build_mbedtls}" == ON ]]; then
-    create_xcframework mbedtls libmbedtls mbedtls
+    create_xcframework mbedtls libmbedtls mbedtls mbedtls
 fi
 if [[ "${build_wg_go}" == ON ]]; then
-    create_xcframework wg-go libwg-go wg-go
+    create_xcframework wg-go libwg-go wg-go wg_go
 fi
 
 prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
