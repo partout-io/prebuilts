@@ -94,7 +94,7 @@ jobs:
           echo "package_matrix=${package_matrix}" >> "${GITHUB_OUTPUT}"
 
   build:
-    name: ${{ matrix.target }}-${{ matrix.vendor }}
+    name: ${{ matrix.build_host == 'apple' && matrix.target || format('{0}-{1}', matrix.target, matrix.vendor) }}
     needs: select-matrix
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
