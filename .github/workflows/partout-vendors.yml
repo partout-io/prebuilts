@@ -10,6 +10,7 @@ on:
         default: all
         options:
           - all
+          - apple-xcframeworks
           - android-arm64-v8a
           - windows-x64
           - windows-arm64
@@ -43,13 +44,17 @@ jobs:
           fi
 
           llvm_mingw_sha256="b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35"
+          apple_xcframeworks='{"target":"apple-xcframeworks","runner":"macos-26","build_host":"apple"}'
           android_arm64_v8a='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux"}'
           windows_x64='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
 
           case "${target}" in
             all)
-              matrix='{"include":['"${android_arm64_v8a}"','"${windows_x64}"','"${windows_arm64}"']}'
+              matrix='{"include":['"${apple_xcframeworks}"','"${android_arm64_v8a}"','"${windows_x64}"','"${windows_arm64}"']}'
+              ;;
+            apple-xcframeworks)
+              matrix='{"include":['"${apple_xcframeworks}"']}'
               ;;
             android-arm64-v8a)
               matrix='{"include":['"${android_arm64_v8a}"']}'
@@ -72,6 +77,7 @@ jobs:
     name: ${{ matrix.target }}
     needs: select-matrix
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     strategy:
       fail-fast: true
       matrix: ${{ fromJSON(needs.select-matrix.outputs.matrix) }}
@@ -204,6 +210,11 @@ jobs:
         if: matrix.build_host == 'linux'
         shell: bash
         run: scripts/build-partout-vendors.sh "${{ matrix.target }}"
+
+      - name: Build static Apple XCFrameworks
+        if: matrix.build_host == 'apple'
+        shell: bash
+        run: scripts/build-partout-apple-xcframeworks.sh all
 
       - name: Build Windows-hosted vendors for ${{ matrix.target }}
         if: matrix.build_host == 'windows'

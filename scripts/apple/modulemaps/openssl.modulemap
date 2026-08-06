@@ -1,0 +1,4 @@
+module openssl [system] {
+    umbrella "openssl"
+    export *
+}
