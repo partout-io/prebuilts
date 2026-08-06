@@ -1,3 +1,6 @@
-[submodule "partout"]
-	path = partout
-	url = https://github.com/partout-io/partout
+[submodule "vendors/mbedtls"]
+	path = vendors/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls
+[submodule "vendors/openssl"]
+	path = vendors/openssl
+	url = https://github.com/openssl/openssl
