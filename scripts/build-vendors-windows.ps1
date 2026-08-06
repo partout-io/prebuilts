@@ -4,7 +4,7 @@ param(
     [string]$Target,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet("openssl", "mbedtls", "wg-go", "wintun")]
+    [ValidateSet("openssl", "mbedtls", "wg-go")]
     [string]$Vendor
 )
 
@@ -30,7 +30,6 @@ switch ($Target) {
         $goArch = "amd64"
         $mingwTriple = "x86_64-w64-mingw32"
         $dlltoolMachine = "i386:x86-64"
-        $wintunArch = "amd64"
     }
     "windows-arm64" {
         $arch = "arm64"
@@ -40,7 +39,6 @@ switch ($Target) {
         $goArch = "arm64"
         $mingwTriple = "aarch64-w64-mingw32"
         $dlltoolMachine = "arm64"
-        $wintunArch = "arm64"
     }
 }
 
@@ -224,15 +222,6 @@ switch ($Vendor) {
         & $dlltool -m $dlltoolMachine -d (Join-Path $wgGoDir "exports.def") -l (Join-Path $vendorRoot "lib\wg-go.lib")
         if ($LASTEXITCODE -ne 0) { throw "llvm-dlltool failed with exit code $LASTEXITCODE" }
     }
-    "wintun" {
-        $wintunVersion = "0.14.1"
-        $archive = Join-Path $workDir "wintun.zip"
-        $expanded = Join-Path $workDir "wintun"
-        Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-$wintunVersion.zip" -OutFile $archive
-        Expand-Archive -Path $archive -DestinationPath $expanded -Force
-        Copy-Item (Join-Path $expanded "wintun\include\wintun.h") $vendorRoot
-        Copy-Item (Join-Path $expanded "wintun\bin\$wintunArch\wintun.dll") $vendorRoot
-    }
 }
 
 switch ($Vendor) {
@@ -253,10 +242,6 @@ switch ($Vendor) {
         Assert-PathExists (Join-Path $vendorRoot "include")
         Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.dll")
         Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.lib")
-    }
-    "wintun" {
-        Assert-PathExists (Join-Path $vendorRoot "wintun.dll")
-        Assert-PathExists (Join-Path $vendorRoot "wintun.h")
     }
 }
 

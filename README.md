@@ -4,7 +4,7 @@ This repository is the source of truth for third-party binary dependencies used 
 
 ## Vendor Builds
 
-The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS `scripts/legacy.make`, Go's build toolchain for wg-go, `nmake` for wxWidgets, and archive extraction for Wintun. There is no repository-level meta-build system.
+The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS `scripts/legacy.make`, Go's build toolchain for wg-go, and `nmake` for wxWidgets. There is no repository-level meta-build system.
 
 Build scripts select one vendor and target at a time, matching the CI matrix:
 
@@ -30,7 +30,7 @@ Consumers download the published vendor/platform archives independently. Partout
 
 All workflows are manual (`workflow_dispatch`) while the packaging format is settling. Build workflows upload GitHub Actions artifacts; the release workflow publishes those artifacts as release assets.
 
-The vendor workflow can build `all`, `openssl`, `mbedtls`, `wg-go`, or `wintun`. Selecting one vendor rebuilds it for every platform it supports. Every matrix entry emits a release-ready vendor/platform artifact; `all` only selects the complete matrix.
+The vendor workflow can build `all`, `openssl`, `mbedtls`, or `wg-go`. Selecting one vendor rebuilds it for every platform it supports. Every matrix entry emits a release-ready vendor/platform artifact; `all` only selects the complete matrix.
 
 The release workflow defaults to the latest successful `all` run. Pass a specific vendor workflow run ID to publish or replace only that run's vendor artifacts.
 
@@ -58,7 +58,7 @@ scripts/build-apple-xcframeworks.sh all openssl
 
 ### Android, Linux, and Windows
 
-Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, wg-go, and Wintun in four parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
+Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
 
 Linux builds OpenSSL, Mbed TLS, and wg-go natively for `x64` and `arm64` in six separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL and wg-go are shared, while Mbed TLS is static.
 
@@ -72,6 +72,6 @@ scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 
 ## Version Pins
 
-The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Wintun and toolchain versions are pinned by the build scripts and workflow files.
+The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Toolchain versions are pinned by the build scripts and workflow files.
 
 Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple XCFramework packages are accompanied by the equivalent vendor-specific manifest.

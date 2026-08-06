@@ -14,7 +14,6 @@ on:
           - openssl
           - mbedtls
           - wg-go
-          - wintun
 
 permissions:
   contents: read
@@ -61,14 +60,12 @@ jobs:
           windows_x64_openssl='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_x64_mbedtls='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_x64_wg_go='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_x64_wintun='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64_openssl='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64_mbedtls='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_arm64_wg_go='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_arm64_wintun='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           case "${vendor}" in
             all)
-              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${linux_x64_openssl}"','"${linux_x64_mbedtls}"','"${linux_x64_wg_go}"','"${linux_arm64_openssl}"','"${linux_arm64_mbedtls}"','"${linux_arm64_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
+              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${linux_x64_openssl}"','"${linux_x64_mbedtls}"','"${linux_x64_wg_go}"','"${linux_arm64_openssl}"','"${linux_arm64_mbedtls}"','"${linux_arm64_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"']}'
               ;;
             openssl)
               matrix='{"include":['"${apple_openssl}"','"${android_openssl}"','"${linux_x64_openssl}"','"${linux_arm64_openssl}"','"${windows_x64_openssl}"','"${windows_arm64_openssl}"']}'
@@ -78,9 +75,6 @@ jobs:
               ;;
             wg-go)
               matrix='{"include":['"${apple_wg_go}"','"${android_wg_go}"','"${linux_x64_wg_go}"','"${linux_arm64_wg_go}"','"${windows_x64_wg_go}"','"${windows_arm64_wg_go}"']}'
-              ;;
-            wintun)
-              matrix='{"include":['"${windows_x64_wintun}"','"${windows_arm64_wintun}"']}'
               ;;
             *)
               echo "Unknown vendor: ${vendor}" >&2

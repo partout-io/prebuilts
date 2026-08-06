@@ -17,10 +17,10 @@ case "${vendor}" in
         git -C "${repository_dir}" submodule update --init --checkout vendors/mbedtls
         git -C "${repository_dir}/vendors/mbedtls" submodule update --init --recursive
         ;;
-    wg-go|wintun)
+    wg-go)
         ;;
     *)
-        echo "Unknown vendor: ${vendor}. Expected all, openssl, mbedtls, wg-go, or wintun." >&2
+        echo "Unknown vendor: ${vendor}. Expected all, openssl, mbedtls, or wg-go." >&2
         exit 1
         ;;
 esac
