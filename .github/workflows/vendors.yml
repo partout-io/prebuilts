@@ -22,6 +22,7 @@ permissions:
 env:
   ANDROID_API: "28"
   ANDROID_NDK_VERSION: "30.0.14904198"
+  GO_VERSION: "1.25.12"
   LLVM_MINGW_VERSION: "20260616"
   LLVM_MINGW_FLAVOR: ucrt
   MSVC_RUNTIME_LIBRARY: MultiThreadedDLL
@@ -51,7 +52,11 @@ jobs:
           android_openssl='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"openssl"}'
           android_mbedtls='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"mbedtls"}'
           android_wg_go='{"target":"android-arm64-v8a","runner":"ubuntu-24.04","build_host":"linux","vendor":"wg-go"}'
+          linux_x64_openssl='{"target":"linux-x64","runner":"ubuntu-24.04","build_host":"linux","vendor":"openssl"}'
+          linux_x64_mbedtls='{"target":"linux-x64","runner":"ubuntu-24.04","build_host":"linux","vendor":"mbedtls"}'
           linux_x64_wg_go='{"target":"linux-x64","runner":"ubuntu-24.04","build_host":"linux","vendor":"wg-go"}'
+          linux_arm64_openssl='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"openssl"}'
+          linux_arm64_mbedtls='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"mbedtls"}'
           linux_arm64_wg_go='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"wg-go"}'
           windows_x64_openssl='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           windows_x64_mbedtls='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
@@ -63,13 +68,13 @@ jobs:
           windows_arm64_wintun='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wintun","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           case "${vendor}" in
             all)
-              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${linux_x64_wg_go}"','"${linux_arm64_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
+              matrix='{"include":['"${apple_openssl}"','"${apple_mbedtls}"','"${apple_wg_go}"','"${android_openssl}"','"${android_mbedtls}"','"${android_wg_go}"','"${linux_x64_openssl}"','"${linux_x64_mbedtls}"','"${linux_x64_wg_go}"','"${linux_arm64_openssl}"','"${linux_arm64_mbedtls}"','"${linux_arm64_wg_go}"','"${windows_x64_openssl}"','"${windows_x64_mbedtls}"','"${windows_x64_wg_go}"','"${windows_x64_wintun}"','"${windows_arm64_openssl}"','"${windows_arm64_mbedtls}"','"${windows_arm64_wg_go}"','"${windows_arm64_wintun}"']}'
               ;;
             openssl)
-              matrix='{"include":['"${apple_openssl}"','"${android_openssl}"','"${windows_x64_openssl}"','"${windows_arm64_openssl}"']}'
+              matrix='{"include":['"${apple_openssl}"','"${android_openssl}"','"${linux_x64_openssl}"','"${linux_arm64_openssl}"','"${windows_x64_openssl}"','"${windows_arm64_openssl}"']}'
               ;;
             mbedtls)
-              matrix='{"include":['"${apple_mbedtls}"','"${android_mbedtls}"','"${windows_x64_mbedtls}"','"${windows_arm64_mbedtls}"']}'
+              matrix='{"include":['"${apple_mbedtls}"','"${android_mbedtls}"','"${linux_x64_mbedtls}"','"${linux_arm64_mbedtls}"','"${windows_x64_mbedtls}"','"${windows_arm64_mbedtls}"']}'
               ;;
             wg-go)
               matrix='{"include":['"${apple_wg_go}"','"${android_wg_go}"','"${linux_x64_wg_go}"','"${linux_arm64_wg_go}"','"${windows_x64_wg_go}"','"${windows_arm64_wg_go}"']}'
@@ -102,11 +107,11 @@ jobs:
         shell: bash
         run: scripts/checkout-vendors.sh "${{ matrix.vendor }}"
 
-      - name: Set up Go from runner image
+      - name: Set up Go
         if: matrix.vendor == 'wg-go'
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: vendors/wg-go/go.sum
 
       - name: Select Android NDK
@@ -127,14 +132,14 @@ jobs:
 
       - name: Restore llvm-mingw cache
         id: llvm-mingw-cache
-        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
+        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go')
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
           key: llvm-mingw-windows-${{ matrix.target }}-${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_sha256 }}
 
-      - name: Set up llvm-mingw for wg-go
-        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
+      - name: Set up llvm-mingw
+        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go')
         shell: pwsh
         run: |
           $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_host_arch }}.zip"
@@ -171,7 +176,7 @@ jobs:
           & $clang --version
 
       - name: Save llvm-mingw cache
-        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go') && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}

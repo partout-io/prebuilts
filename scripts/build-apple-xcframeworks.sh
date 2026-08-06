@@ -40,25 +40,20 @@ esac
 build_openssl=OFF
 build_mbedtls=OFF
 build_wg_go=OFF
-cmake_targets=()
 case "${vendor}" in
     all)
         build_openssl=ON
         build_mbedtls=ON
         build_wg_go=ON
-        cmake_targets=(OpenSSLProject MbedTLSProject WireGuardGoProject)
         ;;
     openssl)
         build_openssl=ON
-        cmake_targets=(OpenSSLProject)
         ;;
     mbedtls)
         build_mbedtls=ON
-        cmake_targets=(MbedTLSProject)
         ;;
     wg-go)
         build_wg_go=ON
-        cmake_targets=(WireGuardGoProject)
         ;;
     *)
         echo "Unknown Apple vendor: ${vendor}. Expected all, openssl, mbedtls, or wg-go." >&2
@@ -66,7 +61,7 @@ case "${vendor}" in
         ;;
 esac
 
-required_commands=(cmake ditto git grep lipo ninja plutil rsync shasum swift xcodebuild xcrun)
+required_commands=(ditto git grep lipo make patch perl plutil python3 rsync shasum swift xcodebuild xcrun)
 if [[ "${build_wg_go}" == ON ]]; then
     required_commands+=(go)
 fi
@@ -77,15 +72,11 @@ for command_name in "${required_commands[@]}"; do
     fi
 done
 
-if [[ ! -f "${repository_dir}/CMakeLists.txt" ]]; then
-    echo "Prebuilts CMake project not found: ${repository_dir}" >&2
-    exit 1
-fi
 if [[ "${build_openssl}" == ON && ! -f "${repository_dir}/vendors/openssl/Configure" ]]; then
     echo "OpenSSL is not initialized in prebuilts." >&2
     exit 1
 fi
-if [[ "${build_mbedtls}" == ON && ! -f "${repository_dir}/vendors/mbedtls/tf-psa-crypto/CMakeLists.txt" ]]; then
+if [[ "${build_mbedtls}" == ON && ! -f "${repository_dir}/vendors/mbedtls/tf-psa-crypto/scripts/basic.requirements.txt" ]]; then
     echo "Mbed TLS submodules are not initialized in prebuilts." >&2
     exit 1
 fi
@@ -93,65 +84,78 @@ fi
 rm -rf "${work_dir}" "${artifacts_dir}"
 mkdir -p "${work_dir}/slices" "${work_dir}/groups" "${artifacts_dir}"
 
+mbedtls_python=""
+if [[ "${build_mbedtls}" == ON ]]; then
+    mbedtls_python="$(${script_dir}/prepare-mbedtls-python.sh "${work_dir}/mbedtls-python")"
+fi
+
 set_slice_metadata() {
     local slice="${1}"
 
     case "${slice}" in
         ios-arm64)
             slice_sdk="iphoneos"
-            slice_cmake_system="iOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-ios${ios_deployment_target}"
             slice_deployment_target="${ios_deployment_target}"
+            slice_openssl_target="ios64-xcrun"
+            slice_goos="ios"
             ;;
         ios-simulator-arm64)
             slice_sdk="iphonesimulator"
-            slice_cmake_system="iOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
+            slice_openssl_target="iossimulator-arm64-xcrun"
+            slice_goos="ios"
             ;;
         ios-simulator-x86_64)
             slice_sdk="iphonesimulator"
-            slice_cmake_system="iOS"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
+            slice_openssl_target="iossimulator-x86_64-xcrun"
+            slice_goos="ios"
             ;;
         macos-arm64)
             slice_sdk="macosx"
-            slice_cmake_system="Darwin"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
+            slice_openssl_target="darwin64-arm64"
+            slice_goos="darwin"
             ;;
         macos-x86_64)
             slice_sdk="macosx"
-            slice_cmake_system="Darwin"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
+            slice_openssl_target="darwin64-x86_64"
+            slice_goos="darwin"
             ;;
         tvos-arm64)
             slice_sdk="appletvos"
-            slice_cmake_system="tvOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}"
             slice_deployment_target="${tvos_deployment_target}"
+            slice_openssl_target="darwin64-arm64"
+            slice_goos="ios"
             ;;
         tvos-simulator-arm64)
             slice_sdk="appletvsimulator"
-            slice_cmake_system="tvOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
+            slice_openssl_target="darwin64-arm64"
+            slice_goos="ios"
             ;;
         tvos-simulator-x86_64)
             slice_sdk="appletvsimulator"
-            slice_cmake_system="tvOS"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
+            slice_openssl_target="darwin64-x86_64"
+            slice_goos="ios"
             ;;
         *)
             echo "Unknown Apple slice: ${slice}" >&2
@@ -195,43 +199,69 @@ group_slices() {
 build_slice() {
     local slice="${1}"
     local slice_dir="${work_dir}/slices/${slice}"
-    local build_dir="${slice_dir}/cmake-build"
+    local build_dir="${slice_dir}/build"
     local vendor_dir="${slice_dir}/vendors"
     local build_log="${slice_dir}/build.log"
-    local toolchain_file="${slice_dir}/toolchain.cmake"
-    local cmake_args=()
+    local apple_cflags
+    local slice_ar
+    local slice_ranlib
+    local slice_goarch
+    local openssl_extra=()
 
     set_slice_metadata "${slice}"
     mkdir -p "${slice_dir}"
-    {
-        printf 'set(CMAKE_SYSTEM_NAME "%s" CACHE STRING "")\n' "${slice_cmake_system}"
-        printf 'set(CMAKE_SYSTEM_PROCESSOR "%s" CACHE STRING "")\n' "${slice_arch}"
-        printf 'set(CMAKE_C_COMPILER "%s" CACHE FILEPATH "")\n' "${slice_clang}"
-        printf 'set(CMAKE_C_COMPILER_TARGET "%s" CACHE STRING "")\n' "${slice_clang_target}"
-        printf 'set(CMAKE_OSX_ARCHITECTURES "%s" CACHE STRING "")\n' "${slice_arch}"
-        printf 'set(CMAKE_OSX_DEPLOYMENT_TARGET "%s" CACHE STRING "")\n' "${slice_deployment_target}"
-        printf 'set(CMAKE_OSX_SYSROOT "%s" CACHE PATH "")\n' "${slice_sdkroot}"
-        printf 'set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY CACHE STRING "")\n'
-    } > "${toolchain_file}"
+    apple_cflags="-O2 -isysroot ${slice_sdkroot} -target ${slice_clang_target}"
+    slice_ar="$(xcrun --sdk "${slice_sdk}" --find ar)"
+    slice_ranlib="$(xcrun --sdk "${slice_sdk}" --find ranlib)"
+    if [[ "${slice_arch}" == arm64 ]]; then
+        slice_goarch=arm64
+    else
+        slice_goarch=amd64
+    fi
+    if [[ "${slice}" == tvos-* ]]; then
+        openssl_extra=(-DHAVE_FORK=0 no-async)
+    fi
 
-    echo "Configuring prebuilts vendors for ${slice}"
-    cmake_args=(
-        -S "${repository_dir}"
-        -B "${build_dir}"
-        -G Ninja
-        -DCMAKE_BUILD_TYPE=Release
-        -DCMAKE_TOOLCHAIN_FILE="${toolchain_file}"
-        -DPPV_BUILD_MBEDTLS="${build_mbedtls}"
-        -DPPV_BUILD_OPENSSL="${build_openssl}"
-        -DPPV_BUILD_WG_GO="${build_wg_go}"
-        -DPPV_OUTPUT="${vendor_dir}"
-    )
-    cmake "${cmake_args[@]}"
-
-    echo "Building prebuilts vendor targets for ${slice}"
-    if ! cmake --build "${build_dir}" \
-        --target "${cmake_targets[@]}" \
-        --parallel "${jobs}" > "${build_log}" 2>&1; then
+    echo "Building ${vendor} for ${slice}"
+    if ! {
+        if [[ "${build_openssl}" == ON ]]; then
+            if [[ "${#openssl_extra[@]}" -gt 0 ]]; then
+                CFLAGS="${apple_cflags}" \
+                LDFLAGS="-isysroot ${slice_sdkroot} -target ${slice_clang_target}" \
+                OPENSSL_LINKAGE=static \
+                BUILD_JOBS="${jobs}" \
+                    "${script_dir}/build-openssl.sh" \
+                    "${vendor_dir}/openssl" "${build_dir}/openssl" \
+                    "${slice_openssl_target}" "${openssl_extra[@]}"
+            else
+                CFLAGS="${apple_cflags}" \
+                LDFLAGS="-isysroot ${slice_sdkroot} -target ${slice_clang_target}" \
+                OPENSSL_LINKAGE=static \
+                BUILD_JOBS="${jobs}" \
+                    "${script_dir}/build-openssl.sh" \
+                    "${vendor_dir}/openssl" "${build_dir}/openssl" \
+                    "${slice_openssl_target}"
+            fi
+        fi
+        if [[ "${build_mbedtls}" == ON ]]; then
+            CC="${slice_clang}" \
+            AR="${slice_ar}" \
+            RANLIB="${slice_ranlib}" \
+            CFLAGS="${apple_cflags}" \
+            MBEDTLS_PYTHON="${mbedtls_python}" \
+            BUILD_JOBS="${jobs}" \
+                "${script_dir}/build-mbedtls.sh" \
+                "${vendor_dir}/mbedtls" "${build_dir}/mbedtls"
+        fi
+        if [[ "${build_wg_go}" == ON ]]; then
+            make -C "${repository_dir}/vendors/wg-go" install \
+                "BUILDDIR=${build_dir}/wg-go" \
+                "DESTDIR=${vendor_dir}/wg-go" \
+                "TMPROOTDIR=${build_dir}/wg-go-goroot" \
+                APPLE=1 "GOARCH=${slice_goarch}" "GOOS=${slice_goos}" \
+                "SDKROOT=${slice_sdkroot}" "TARGET=${slice_clang_target}"
+        fi
+    } > "${build_log}" 2>&1; then
         tail -n 300 "${build_log}" >&2
         exit 1
     fi
@@ -445,8 +475,8 @@ go_version=""
 if [[ "${build_wg_go}" == ON ]] && command -v go >/dev/null 2>&1; then
     go_version="$(go env GOVERSION 2>/dev/null || go version)"
 fi
-cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
-ninja_version="$(ninja --version)"
+make_version="$(make --version | sed -n '1p')"
+python_version="$(python3 --version 2>&1)"
 
 manifest_scope="apple"
 if [[ "${vendor}" != all ]]; then
@@ -486,8 +516,8 @@ manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
         separator=", "
     done
     printf '],\n'
-    printf '  "toolchains": { "xcode": "%s", "go": "%s", "cmake": "%s", "ninja": "%s" }\n' \
-        "${xcode_version}" "${go_version}" "${cmake_version}" "${ninja_version}"
+    printf '  "toolchains": { "xcode": "%s", "go": "%s", "make": "%s", "python": "%s" }\n' \
+        "${xcode_version}" "${go_version}" "${make_version}" "${python_version}"
     printf '}\n'
 } > "${manifest_path}"
 

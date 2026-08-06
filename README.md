@@ -2,18 +2,16 @@
 
 This repository is the source of truth for third-party binary dependencies used by Passepartout and Partout. It owns the upstream source pins, patches, cross-platform build recipes, packaging, and release metadata.
 
-## Vendor Superbuild
+## Vendor Builds
 
-The root CMake project builds OpenSSL, Mbed TLS, wg-go, and Wintun as a standalone superbuild. One CMake configure represents one target ABI; toolchain files carry the cross-compilation environment into the vendor adapters under `cmake/vendors`.
+The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS `scripts/legacy.make`, Go's build toolchain for wg-go, `nmake` for wxWidgets, and archive extraction for Wintun. There is no repository-level meta-build system.
 
-The build can select vendors independently:
+Build scripts select one vendor and target at a time, matching the CI matrix:
 
 ```sh
-cmake -S . -B .build/vendors -G Ninja \
-    -DPPV_BUILD_OPENSSL=ON \
-    -DPPV_BUILD_MBEDTLS=ON \
-    -DPPV_BUILD_WG_GO=ON
-cmake --build .build/vendors --target vendors
+scripts/build-apple-xcframeworks.sh all openssl
+scripts/build-vendors.sh android-arm64-v8a mbedtls
+scripts/build-vendors.sh linux-x64 wg-go
 ```
 
 Initialize the OpenSSL and Mbed TLS sources before building:
@@ -22,7 +20,7 @@ Initialize the OpenSSL and Mbed TLS sources before building:
 scripts/checkout-vendors.sh
 ```
 
-Consumers download the published vendor/platform archives independently. Partout uses system libraries where available and otherwise resolves these archives through `PP_BUILD_VENDOR_PREBUILT_URL`; this repository never checks out or builds Partout.
+Consumers download the published vendor/platform archives independently. Partout uses system libraries where available and otherwise resolves the relevant vendor archive URL; this repository never checks out or builds Partout.
 
 ## Workflows
 
@@ -62,7 +60,7 @@ scripts/build-apple-xcframeworks.sh all openssl
 
 Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, wg-go, and Wintun in four parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
 
-Linux builds wg-go natively for `x64` and `arm64` in separate jobs. They produce `wg-go-linux-x64.tar.gz` and `wg-go-linux-arm64.tar.gz`, each containing the shared library, public headers, and manifest for that architecture.
+Linux builds OpenSSL, Mbed TLS, and wg-go natively for `x64` and `arm64` in six separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL and wg-go are shared, while Mbed TLS is static.
 
 The local scripts take the same vendor selection as CI, for example:
 
@@ -74,6 +72,6 @@ scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 
 ## Version Pins
 
-The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Wintun and toolchain versions are pinned by the CMake and workflow files.
+The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Wintun and toolchain versions are pinned by the build scripts and workflow files.
 
 Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple XCFramework packages are accompanied by the equivalent vendor-specific manifest.
