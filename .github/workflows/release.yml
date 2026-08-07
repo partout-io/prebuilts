@@ -118,22 +118,7 @@ jobs:
           {
             printf 'Prebuilts for %s.\n\n' "${RELEASE_TAG}"
             printf 'Vendor Prebuilts run: %s\n' "${VENDORS_RUN_ID}"
-            printf 'Windows wxWidgets run: %s\n\n' "${WINDOWS_RUN_ID}"
-            printf '## Apple XCFramework checksums\n\n'
-
-            mapfile -t apple_checksums < <(
-              find release-assets/vendor-prebuilts -type f -name '*.xcframework.zip.checksum' | sort
-            )
-            if [ "${#apple_checksums[@]}" -eq 0 ]; then
-              echo "No Apple XCFramework checksums found." >&2
-              exit 1
-            fi
-
-            for checksum_file in "${apple_checksums[@]}"; do
-              archive_name="$(basename "${checksum_file%.checksum}")"
-              checksum="$(<"${checksum_file}")"
-              printf -- '- `%s`: `%s`\n' "${archive_name}" "${checksum}"
-            done
+            printf 'Windows wxWidgets run: %s\n' "${WINDOWS_RUN_ID}"
           } > release-notes.md
 
           args=(--title "${RELEASE_TAG}" --notes-file release-notes.md)
