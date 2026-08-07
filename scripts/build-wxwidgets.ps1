@@ -125,5 +125,3 @@ $manifest = [ordered]@{
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $installDir "manifest.json")
 
 Compress-Archive -Path (Join-Path $installDir "*") -DestinationPath $packagePath
-$sha256 = (Get-FileHash -Algorithm SHA256 $packagePath).Hash.ToLowerInvariant()
-"$sha256  $packageName" | Set-Content -Encoding ASCII "$packagePath.sha256"

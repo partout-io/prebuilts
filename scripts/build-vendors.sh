@@ -51,7 +51,7 @@ case "${vendor}" in
         exit 1
         ;;
 esac
-required_commands=(git make rsync shasum)
+required_commands=(git make rsync)
 case "${vendor}" in
     openssl)
         required_commands+=(perl)
@@ -234,5 +234,3 @@ EOF
 package_name="${vendor}-${target}.tar.gz"
 package_path="${artifacts_dir}/${package_name}"
 tar -czf "${package_path}" -C "${vendor_dir}" .
-sha256="$(shasum -a 256 "${package_path}" | awk '{print $1}')"
-printf '%s  %s\n' "${sha256}" "${package_name}" > "${package_path}.sha256"
