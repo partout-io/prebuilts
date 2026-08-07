@@ -24,7 +24,7 @@ Consumers download the published vendor/platform archives independently. Partout
 
 ## Workflows
 
-- `Vendor Prebuilts` (`vendors.yml`) builds the vendor distribution matrix.
+- `Vendor Prebuilts` (`partout-vendors.yml`) builds the vendor distribution matrix.
 - `Windows wxWidgets` builds static wxWidgets libraries with MSVC.
 - `Release Prebuilts` downloads successful workflow artifacts and uploads them to a GitHub Release.
 
@@ -44,7 +44,7 @@ The Apple matrix builds OpenSSL, Mbed TLS, and wg-go in separate parallel jobs. 
 
 OpenSSL's `libssl.a` and `libcrypto.a` are consolidated into one archive per slice. Mbed TLS's `libmbedtls.a`, `libmbedx509.a`, and `libmbedcrypto.a` are consolidated similarly. wg-go uses Go's `c-archive` mode. No dynamic library is included in an Apple XCFramework.
 
-Each job emits a zipped SwiftPM-compatible XCFramework, `.checksum` and `.sha256` sidecars, and a vendor-specific manifest. Build all Apple vendors locally with:
+Each job emits a zipped SwiftPM-compatible XCFramework, a `.checksum` sidecar, and vendor metadata for release aggregation. Build all Apple vendors locally with:
 
 ```sh
 scripts/build-apple-xcframeworks.sh all
@@ -74,4 +74,4 @@ scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 
 The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Toolchain versions are pinned by the build scripts and workflow files.
 
-Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple XCFramework packages are accompanied by the equivalent vendor-specific manifest.
+Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple builds emit equivalent vendor-specific metadata. The release workflow attaches one `manifest.json` that aggregates the metadata for every published OpenSSL, Mbed TLS, wg-go, and wxWidgets artifact; intermediate manifests are not published separately.

@@ -61,7 +61,7 @@ case "${vendor}" in
         ;;
 esac
 
-required_commands=(ditto git grep lipo make patch perl plutil python3 rsync shasum swift xcodebuild xcrun)
+required_commands=(ditto git grep lipo make patch perl plutil python3 rsync swift xcodebuild xcrun)
 if [[ "${build_wg_go}" == ON ]]; then
     required_commands+=(go)
 fi
@@ -457,10 +457,7 @@ create_xcframework() {
 
     local archive_name="${name}.xcframework.zip"
     local archive_path="${artifacts_dir}/${archive_name}"
-    local sha256
     ditto -c -k --sequesterRsrc --keepParent "${output}" "${archive_path}"
-    sha256="$(shasum -a 256 "${archive_path}" | awk '{print $1}')"
-    printf '%s  %s\n' "${sha256}" "${archive_name}" > "${archive_path}.sha256"
     swift package compute-checksum "${archive_path}" > "${archive_path}.checksum"
 }
 
@@ -544,10 +541,6 @@ manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
         "${xcode_version}" "${go_version}" "${make_version}" "${python_version}"
     printf '}\n'
 } > "${manifest_path}"
-
-manifest_name="$(basename "${manifest_path}")"
-manifest_sha256="$(shasum -a 256 "${manifest_path}" | awk '{print $1}')"
-printf '%s  %s\n' "${manifest_sha256}" "${manifest_name}" > "${manifest_path}.sha256"
 
 echo "Created static Apple XCFramework artifacts in ${artifacts_dir}:"
 find "${artifacts_dir}" -maxdepth 1 -type f -print | sort

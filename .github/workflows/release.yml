@@ -32,6 +32,9 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
     steps:
+      - name: Check out prebuilts
+        uses: actions/checkout@v7
+
       - name: Resolve build runs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,7 +46,7 @@ jobs:
           vendors_run_id="${VENDOR_PREBUILTS_RUN_ID}"
           if [ -z "${vendors_run_id}" ]; then
             vendors_run_id="$(
-              gh run list --workflow vendors.yml --status success --limit 100 \
+              gh run list --workflow partout-vendors.yml --status success --limit 100 \
                 --json databaseId,displayTitle \
                 --jq 'map(select(.displayTitle == "Vendor Prebuilts (all)")) | .[0].databaseId'
             )"
@@ -77,6 +80,26 @@ jobs:
           mkdir -p release-assets/vendor-prebuilts release-assets/windows-wxwidgets
           gh run download "${VENDORS_RUN_ID}" --dir release-assets/vendor-prebuilts
           gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
+
+          find release-assets -type f -print | sort
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+
+          scripts/aggregate-manifests.sh release-assets release-assets/manifest.json
+
+          find release-assets -type f \( \
+            -name '*-manifest.json' -o \
+            -name '*-manifest.json.sha256' -o \
+            -name '*.xcframework.zip.sha256' \
+          \) -delete
+
+          mapfile -t manifests < <(find release-assets -type f -name '*.json' | sort)
+          if [ "${#manifests[@]}" -ne 1 ] || [ "${manifests[0]}" != "release-assets/manifest.json" ]; then
+            echo "Expected manifest.json to be the only JSON release asset." >&2
+            exit 1
+          fi
 
           find release-assets -type f -print | sort
 
