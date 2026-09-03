@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.15)
+project(PrebuiltPackageSmokeTest LANGUAGES NONE)
+
+if(TEST_MBEDTLS)
+    find_package(MbedTLS CONFIG REQUIRED)
+
+    foreach(target mbedtls mbedx509 tfpsacrypto)
+        if(NOT TARGET MbedTLS::${target})
+            message(FATAL_ERROR "MbedTLS::${target} was not imported")
+        endif()
+    endforeach()
+
+    get_target_property(mbedtls_links MbedTLS::mbedtls INTERFACE_LINK_LIBRARIES)
+    if(NOT "MbedTLS::mbedx509" IN_LIST mbedtls_links)
+        message(FATAL_ERROR "MbedTLS::mbedtls does not transitively link MbedTLS::mbedx509")
+    endif()
+    get_target_property(mbedx509_links MbedTLS::mbedx509 INTERFACE_LINK_LIBRARIES)
+    if(NOT "MbedTLS::tfpsacrypto" IN_LIST mbedx509_links)
+        message(FATAL_ERROR "MbedTLS::mbedx509 does not transitively link MbedTLS::tfpsacrypto")
+    endif()
+endif()
+
+if(TEST_WGGO)
+    find_package(WgGo CONFIG REQUIRED)
+    if(NOT TARGET WgGo::wg-go)
+        message(FATAL_ERROR "WgGo::wg-go was not imported")
+    endif()
+endif()

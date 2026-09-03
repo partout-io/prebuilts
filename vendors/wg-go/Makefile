@@ -86,8 +86,9 @@ clean:
 	rm -rf "$(BUILDDIR)" "$(DESTDIR)" "$(TMPROOTDIR)"
 
 install: build
-	mkdir -p "$(DESTDIR)/lib"
+	mkdir -p "$(DESTDIR)/lib" "$(DESTDIR)/lib/cmake/WgGo"
 	cp $(BUILDDIR)/libwg-go.* "$(DESTDIR)/lib"
 	cp -pR "include" "$(DESTDIR)"
+	cp -pR "cmake/." "$(DESTDIR)/lib/cmake/WgGo"
 
 .PHONY: clean build version-header install

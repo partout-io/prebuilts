@@ -57,10 +57,10 @@ case "${vendor}" in
         required_commands+=(perl)
         ;;
     mbedtls)
-        required_commands+=(ar cc python3 ranlib)
+        required_commands+=(ar cc cmake python3 ranlib)
         ;;
     wg-go)
-        required_commands+=(go)
+        required_commands+=(cmake go)
         ;;
 esac
 for command_name in "${required_commands[@]}"; do
@@ -129,17 +129,26 @@ case "${vendor}" in
             mbedtls_cc="${android_clang}"
             mbedtls_ar="${android_toolchain}/bin/llvm-ar"
             mbedtls_ranlib="${android_toolchain}/bin/llvm-ranlib"
+            mbedtls_cmake_toolchain_file="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake"
+            mbedtls_cmake_android_abi="${arch}"
+            mbedtls_cmake_android_platform="android-${ANDROID_API}"
         else
             mbedtls_path="${PATH}"
             mbedtls_cc="$(command -v cc)"
             mbedtls_ar="$(command -v ar)"
             mbedtls_ranlib="$(command -v ranlib)"
+            mbedtls_cmake_toolchain_file=""
+            mbedtls_cmake_android_abi=""
+            mbedtls_cmake_android_platform=""
         fi
         PATH="${mbedtls_path}" \
         CC="${mbedtls_cc}" \
         AR="${mbedtls_ar}" \
         RANLIB="${mbedtls_ranlib}" \
         CFLAGS="-O2 -fPIC" \
+        MBEDTLS_CMAKE_TOOLCHAIN_FILE="${mbedtls_cmake_toolchain_file}" \
+        MBEDTLS_CMAKE_ANDROID_ABI="${mbedtls_cmake_android_abi}" \
+        MBEDTLS_CMAKE_ANDROID_PLATFORM="${mbedtls_cmake_android_platform}" \
         MBEDTLS_PYTHON="${mbedtls_python}" \
         BUILD_JOBS="$(nproc)" \
             "${script_dir}/build-mbedtls.sh" \
@@ -169,11 +178,31 @@ case "${vendor}" in
         for library in libmbedtls.a libmbedx509.a libmbedcrypto.a; do
             [[ -f "${vendor_dir}/lib/${library}" ]] || { echo "Missing ${library}" >&2; exit 1; }
         done
+        [[ -f "${vendor_dir}/lib/libtfpsacrypto.a" ]] || { echo "Missing libtfpsacrypto.a" >&2; exit 1; }
+        [[ -f "${vendor_dir}/lib/cmake/MbedTLS/MbedTLSConfig.cmake" ]] || { echo "Missing MbedTLSConfig.cmake" >&2; exit 1; }
         ;;
     wg-go)
         [[ -f "${vendor_dir}/lib/libwg-go.so" ]] || { echo "Missing libwg-go.so" >&2; exit 1; }
+        [[ -f "${vendor_dir}/lib/cmake/WgGo/WgGoConfig.cmake" ]] || { echo "Missing WgGoConfig.cmake" >&2; exit 1; }
         ;;
 esac
+
+cmake_smoke_args=(
+    -S "${repository_dir}/tests/cmake-packages"
+    -B "${work_dir}/cmake-package-smoke"
+    "-DCMAKE_PREFIX_PATH=${vendor_dir}"
+)
+case "${vendor}" in
+    mbedtls)
+        cmake_smoke_args+=(-DTEST_MBEDTLS=ON)
+        ;;
+    wg-go)
+        cmake_smoke_args+=(-DTEST_WGGO=ON)
+        ;;
+esac
+if [[ "${vendor}" == mbedtls || "${vendor}" == wg-go ]]; then
+    cmake "${cmake_smoke_args[@]}"
+fi
 
 prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
 prebuilts_repository=""
@@ -212,6 +241,10 @@ else
     platform_toolchains="$(printf ',\n    \"hostArchitecture\": \"%s\"' "${host_arch}")"
 fi
 make_version="$(make --version | sed -n '1p')"
+cmake_version=""
+if [[ "${vendor}" == mbedtls || "${vendor}" == wg-go ]]; then
+    cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
+fi
 
 cat > "${vendor_dir}/manifest.json" <<EOF
 {
@@ -226,6 +259,7 @@ ${libraries_json}
   },
   "toolchains": {
     "go": "${go_version}",
+    "cmake": "${cmake_version}",
     "make": "${make_version}"${platform_toolchains}
   }
 }

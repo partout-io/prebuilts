@@ -135,6 +135,7 @@ switch ($Vendor) {
     "mbedtls" {
         Assert-PathExists (Join-Path $mbedtlsDir "tf-psa-crypto\scripts\basic.requirements.txt")
         $buildSource = Join-Path $workDir "mbedtls-source"
+        $cmakeBuild = Join-Path $workDir "mbedtls-cmake-build"
         Copy-SourceTree $mbedtlsDir $buildSource
 
         $venv = Join-Path $workDir "mbedtls-python"
@@ -144,45 +145,45 @@ switch ($Vendor) {
             -r (Join-Path $mbedtlsDir "scripts\basic.requirements.txt") `
             -r (Join-Path $mbedtlsDir "tf-psa-crypto\scripts\basic.requirements.txt")
 
-        $gnuMakeCommand = Get-Command make.exe -ErrorAction SilentlyContinue
-        $gnuMakePath = if ($gnuMakeCommand) { $gnuMakeCommand.Source } else { "" }
-        if (-not $gnuMakePath) {
-            $msysMake = "C:\msys64\usr\bin\make.exe"
-            if (Test-Path $msysMake) { $gnuMakePath = $msysMake }
-        }
-        if (-not $gnuMakePath) { throw "GNU make is required for Mbed TLS" }
-
         $cc = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
         $ar = Join-Path $llvmMingwRoot "bin\llvm-ar.exe"
         $ranlib = Join-Path $llvmMingwRoot "bin\llvm-ranlib.exe"
         Assert-PathExists $cc
         Assert-PathExists $ar
         Assert-PathExists $ranlib
-        $makeArgs = @(
-            "-C", $buildSource, "-f", "scripts/legacy.make",
-            "-j$([Environment]::ProcessorCount)", "lib",
-            "CC=$($cc.Replace('\', '/'))",
-            "AR=$($ar.Replace('\', '/'))",
-            "RL=$($ranlib.Replace('\', '/'))",
-            "PYTHON=$($python.Replace('\', '/'))",
-            "CFLAGS=-O2", "GEN_FILES=yes", "WINDOWS=1", "AR_DASH="
+        if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) { throw "CMake is required for Mbed TLS" }
+        if (-not (Get-Command ninja.exe -ErrorAction SilentlyContinue)) { throw "Ninja is required for Mbed TLS" }
+        $cmakeArgs = @(
+            "-S", $buildSource,
+            "-B", $cmakeBuild,
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_INSTALL_PREFIX=$vendorRoot",
+            "-DCMAKE_INSTALL_LIBDIR=lib",
+            "-DCMAKE_SYSTEM_NAME=Windows",
+            "-DCMAKE_SYSTEM_PROCESSOR=$arch",
+            "-DCMAKE_C_COMPILER=$cc",
+            "-DCMAKE_AR=$ar",
+            "-DCMAKE_RANLIB=$ranlib",
+            "-DCMAKE_C_FLAGS=-O2",
+            "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+            "-DPython3_EXECUTABLE=$python",
+            "-DGEN_FILES=ON",
+            "-DENABLE_PROGRAMS=OFF",
+            "-DENABLE_TESTING=OFF",
+            "-DUSE_SHARED_MBEDTLS_LIBRARY=OFF",
+            "-DUSE_STATIC_MBEDTLS_LIBRARY=ON"
         )
-        & $gnuMakePath @makeArgs
-        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS make failed with exit code $LASTEXITCODE" }
+        & cmake @cmakeArgs
+        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake configure failed with exit code $LASTEXITCODE" }
+        & cmake --build $cmakeBuild --parallel $([Environment]::ProcessorCount)
+        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake build failed with exit code $LASTEXITCODE" }
+        & cmake --install $cmakeBuild
+        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake install failed with exit code $LASTEXITCODE" }
 
-        New-Item -ItemType Directory -Force `
-            (Join-Path $vendorRoot "include\mbedtls"), `
-            (Join-Path $vendorRoot "include\psa"), `
-            (Join-Path $vendorRoot "include\tf-psa-crypto"), `
-            (Join-Path $vendorRoot "lib") | Out-Null
-        Copy-Item (Join-Path $buildSource "include\mbedtls\*") (Join-Path $vendorRoot "include\mbedtls") -Recurse -Force
-        Copy-Item (Join-Path $buildSource "tf-psa-crypto\include\mbedtls\*") (Join-Path $vendorRoot "include\mbedtls") -Recurse -Force
-        Copy-Item (Join-Path $buildSource "tf-psa-crypto\drivers\builtin\include\mbedtls\*") (Join-Path $vendorRoot "include\mbedtls") -Recurse -Force
-        Copy-Item (Join-Path $buildSource "tf-psa-crypto\include\psa\*") (Join-Path $vendorRoot "include\psa") -Recurse -Force
-        Copy-Item (Join-Path $buildSource "tf-psa-crypto\include\tf-psa-crypto\*") (Join-Path $vendorRoot "include\tf-psa-crypto") -Recurse -Force
-        Copy-Item (Join-Path $buildSource "library\libmbedtls.a") (Join-Path $vendorRoot "lib\mbedtls.lib")
-        Copy-Item (Join-Path $buildSource "library\libmbedx509.a") (Join-Path $vendorRoot "lib\mbedx509.lib")
-        Copy-Item (Join-Path $buildSource "library\libmbedcrypto.a") (Join-Path $vendorRoot "lib\mbedcrypto.lib")
+        Copy-Item (Join-Path $vendorRoot "lib\libmbedtls.a") (Join-Path $vendorRoot "lib\mbedtls.lib")
+        Copy-Item (Join-Path $vendorRoot "lib\libmbedx509.a") (Join-Path $vendorRoot "lib\mbedx509.lib")
+        Copy-Item (Join-Path $vendorRoot "lib\libmbedcrypto.a") (Join-Path $vendorRoot "lib\mbedcrypto.lib")
     }
     "wg-go" {
         $cc = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
@@ -193,6 +194,8 @@ switch ($Vendor) {
         Assert-PathExists $dlltool
         New-Item -ItemType Directory -Force (Join-Path $vendorRoot "include"), (Join-Path $vendorRoot "lib") | Out-Null
         Copy-Item (Join-Path $wgGoDir "include\*") (Join-Path $vendorRoot "include") -Recurse -Force
+        New-Item -ItemType Directory -Force (Join-Path $vendorRoot "lib\cmake\WgGo") | Out-Null
+        Copy-Item (Join-Path $wgGoDir "cmake\*") (Join-Path $vendorRoot "lib\cmake\WgGo") -Force
 
         $previousEnvironment = @{
             CGO_ENABLED = $env:CGO_ENABLED; GOOS = $env:GOOS; GOARCH = $env:GOARCH;
@@ -234,15 +237,26 @@ switch ($Vendor) {
     }
     "mbedtls" {
         Assert-PathExists (Join-Path $vendorRoot "include")
+        Assert-PathExists (Join-Path $vendorRoot "lib\cmake\MbedTLS\MbedTLSConfig.cmake")
+        Assert-PathExists (Join-Path $vendorRoot "lib\libtfpsacrypto.a")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedtls.lib")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedx509.lib")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedcrypto.lib")
     }
     "wg-go" {
         Assert-PathExists (Join-Path $vendorRoot "include")
+        Assert-PathExists (Join-Path $vendorRoot "lib\cmake\WgGo\WgGoConfig.cmake")
         Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.dll")
         Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.lib")
     }
+}
+
+if ($Vendor -in @("mbedtls", "wg-go")) {
+    $smokeBuild = Join-Path $workDir "cmake-package-smoke"
+    $smokeOption = if ($Vendor -eq "mbedtls") { "-DTEST_MBEDTLS=ON" } else { "-DTEST_WGGO=ON" }
+    & cmake -S (Join-Path $root "tests\cmake-packages") -B $smokeBuild `
+        "-DCMAKE_PREFIX_PATH=$vendorRoot" $smokeOption
+    if ($LASTEXITCODE -ne 0) { throw "$Vendor CMake package smoke test failed with exit code $LASTEXITCODE" }
 }
 
 $prebuiltsRemote = ((& git -C $root remote) | Select-Object -First 1) -as [string]
@@ -293,6 +307,14 @@ if ($Vendor -in @("mbedtls", "wg-go")) {
     $clang = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
     $clangVersion = ((& $clang --version) | Select-Object -First 1).Trim()
 }
+$cmakeVersion = ""
+$ninjaVersion = ""
+if ($Vendor -in @("mbedtls", "wg-go")) {
+    $cmakeVersion = ((& cmake --version) | Select-Object -First 1) -replace "^cmake version ", ""
+}
+if ($Vendor -eq "mbedtls") {
+    $ninjaVersion = ((& ninja --version) | Select-Object -First 1).Trim()
+}
 $manifest = [ordered]@{
     schemaVersion = 1
     target = $Target
@@ -303,6 +325,8 @@ $manifest = [ordered]@{
     libraries = $libraries
     toolchains = [ordered]@{
         go = $goVersion
+        cmake = $cmakeVersion
+        ninja = $ninjaVersion
         make = $makeVersion
         llvmMingw = $llvmMingwVersion
         clang = $clangVersion

@@ -65,6 +65,9 @@ required_commands=(ditto git grep lipo make patch perl plutil python3 rsync swif
 if [[ "${build_wg_go}" == ON ]]; then
     required_commands+=(go)
 fi
+if [[ "${build_mbedtls}" == ON ]]; then
+    required_commands+=(cmake)
+fi
 for command_name in "${required_commands[@]}"; do
     if ! command -v "${command_name}" >/dev/null 2>&1; then
         echo "Required command not found: ${command_name}" >&2
@@ -95,6 +98,7 @@ set_slice_metadata() {
     case "${slice}" in
         ios-arm64)
             slice_sdk="iphoneos"
+            slice_cmake_system_name="iOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-ios${ios_deployment_target}"
             slice_deployment_target="${ios_deployment_target}"
@@ -103,6 +107,7 @@ set_slice_metadata() {
             ;;
         ios-simulator-arm64)
             slice_sdk="iphonesimulator"
+            slice_cmake_system_name="iOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
@@ -111,6 +116,7 @@ set_slice_metadata() {
             ;;
         ios-simulator-x86_64)
             slice_sdk="iphonesimulator"
+            slice_cmake_system_name="iOS"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
@@ -119,6 +125,7 @@ set_slice_metadata() {
             ;;
         macos-arm64)
             slice_sdk="macosx"
+            slice_cmake_system_name="Darwin"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
@@ -127,6 +134,7 @@ set_slice_metadata() {
             ;;
         macos-x86_64)
             slice_sdk="macosx"
+            slice_cmake_system_name="Darwin"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
@@ -135,6 +143,7 @@ set_slice_metadata() {
             ;;
         tvos-arm64)
             slice_sdk="appletvos"
+            slice_cmake_system_name="tvOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}"
             slice_deployment_target="${tvos_deployment_target}"
@@ -143,6 +152,7 @@ set_slice_metadata() {
             ;;
         tvos-simulator-arm64)
             slice_sdk="appletvsimulator"
+            slice_cmake_system_name="tvOS"
             slice_arch="arm64"
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
@@ -151,6 +161,7 @@ set_slice_metadata() {
             ;;
         tvos-simulator-x86_64)
             slice_sdk="appletvsimulator"
+            slice_cmake_system_name="tvOS"
             slice_arch="x86_64"
             slice_clang_target="x86_64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
@@ -248,6 +259,10 @@ build_slice() {
             AR="${slice_ar}" \
             RANLIB="${slice_ranlib}" \
             CFLAGS="${apple_cflags}" \
+            MBEDTLS_CMAKE_SYSTEM_NAME="${slice_cmake_system_name}" \
+            MBEDTLS_CMAKE_OSX_SYSROOT="${slice_sdkroot}" \
+            MBEDTLS_CMAKE_OSX_ARCHITECTURES="${slice_arch}" \
+            MBEDTLS_CMAKE_OSX_DEPLOYMENT_TARGET="${slice_deployment_target}" \
             MBEDTLS_PYTHON="${mbedtls_python}" \
             BUILD_JOBS="${jobs}" \
                 "${script_dir}/build-mbedtls.sh" \
@@ -497,6 +512,10 @@ if [[ "${build_wg_go}" == ON ]] && command -v go >/dev/null 2>&1; then
     go_version="$(go env GOVERSION 2>/dev/null || go version)"
 fi
 make_version="$(make --version | sed -n '1p')"
+cmake_version=""
+if [[ "${build_mbedtls}" == ON ]]; then
+    cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
+fi
 python_version="$(python3 --version 2>&1)"
 
 manifest_scope="apple"
@@ -537,8 +556,8 @@ manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
         separator=", "
     done
     printf '],\n'
-    printf '  "toolchains": { "xcode": "%s", "go": "%s", "make": "%s", "python": "%s" }\n' \
-        "${xcode_version}" "${go_version}" "${make_version}" "${python_version}"
+    printf '  "toolchains": { "xcode": "%s", "go": "%s", "cmake": "%s", "make": "%s", "python": "%s" }\n' \
+        "${xcode_version}" "${go_version}" "${cmake_version}" "${make_version}" "${python_version}"
     printf '}\n'
 } > "${manifest_path}"
 

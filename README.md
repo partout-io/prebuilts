@@ -4,7 +4,7 @@ This repository is the source of truth for third-party binary dependencies used 
 
 ## Vendor Builds
 
-The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS `scripts/legacy.make`, Go's build toolchain for wg-go, and `nmake` for wxWidgets. There is no repository-level meta-build system.
+The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS's CMake build, Go's build toolchain for wg-go, and `nmake` for wxWidgets. There is no repository-level meta-build system.
 
 Build scripts select one vendor and target at a time, matching the CI matrix:
 
@@ -61,6 +61,12 @@ scripts/build-apple-xcframeworks.sh all openssl
 Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
 
 Linux builds OpenSSL, Mbed TLS, and wg-go natively for `x64` and `arm64` in six separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL and wg-go are shared, while Mbed TLS is static.
+
+The Android, Linux, and Windows Mbed TLS packages retain the upstream CMake
+package metadata and expose `MbedTLS::mbedtls`, `MbedTLS::mbedx509`, and
+`MbedTLS::tfpsacrypto`. The wg-go packages include a relocatable `WgGo` config
+package exposing `WgGo::wg-go`. Consumers can discover either package by adding
+the extracted prebuilt root to `CMAKE_PREFIX_PATH`.
 
 The local scripts take the same vendor selection as CI, for example:
 
