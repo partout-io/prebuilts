@@ -57,11 +57,11 @@ jobs:
           linux_arm64_openssl='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"openssl"}'
           linux_arm64_mbedtls='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"mbedtls"}'
           linux_arm64_wg_go='{"target":"linux-arm64","runner":"ubuntu-24.04-arm","build_host":"linux","vendor":"wg-go"}'
-          windows_x64_openssl='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_x64_mbedtls='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_x64_openssl='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"openssl"}'
+          windows_x64_mbedtls='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls"}'
           windows_x64_wg_go='{"target":"windows-x64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"x86_64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_arm64_openssl='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"openssl","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
-          windows_arm64_mbedtls='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
+          windows_arm64_openssl='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"openssl"}'
+          windows_arm64_mbedtls='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"mbedtls"}'
           windows_arm64_wg_go='{"target":"windows-arm64","runner":"windows-2022","build_host":"windows","vendor":"wg-go","llvm_mingw_host_arch":"x86_64","llvm_mingw_triple":"aarch64-w64-mingw32","llvm_mingw_sha256":"'"${llvm_mingw_sha256}"'"}'
           case "${vendor}" in
             all)
@@ -126,14 +126,14 @@ jobs:
 
       - name: Restore llvm-mingw cache
         id: llvm-mingw-cache
-        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go')
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
         uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}
           key: llvm-mingw-windows-${{ matrix.target }}-${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_sha256 }}
 
       - name: Set up llvm-mingw
-        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go')
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go'
         shell: pwsh
         run: |
           $archive = "llvm-mingw-$env:LLVM_MINGW_VERSION-$env:LLVM_MINGW_FLAVOR-${{ matrix.llvm_mingw_host_arch }}.zip"
@@ -170,7 +170,7 @@ jobs:
           & $clang --version
 
       - name: Save llvm-mingw cache
-        if: matrix.build_host == 'windows' && (matrix.vendor == 'mbedtls' || matrix.vendor == 'wg-go') && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
+        if: matrix.build_host == 'windows' && matrix.vendor == 'wg-go' && steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: ${{ runner.tool_cache }}/llvm-mingw/${{ env.LLVM_MINGW_VERSION }}-${{ env.LLVM_MINGW_FLAVOR }}-${{ matrix.llvm_mingw_host_arch }}

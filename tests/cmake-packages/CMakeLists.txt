@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(PrebuiltPackageSmokeTest LANGUAGES NONE)
 
 if(TEST_MBEDTLS)
+    enable_language(C)
     find_package(MbedTLS CONFIG REQUIRED)
 
     foreach(target mbedtls mbedx509 tfpsacrypto)
@@ -17,6 +18,12 @@ if(TEST_MBEDTLS)
     get_target_property(mbedx509_links MbedTLS::mbedx509 INTERFACE_LINK_LIBRARIES)
     if(NOT "MbedTLS::tfpsacrypto" IN_LIST mbedx509_links)
         message(FATAL_ERROR "MbedTLS::mbedx509 does not transitively link MbedTLS::tfpsacrypto")
+    endif()
+
+    add_executable(mbedtls-package-smoke mbedtls-smoke.c)
+    target_link_libraries(mbedtls-package-smoke PRIVATE MbedTLS::mbedtls)
+    if(MSVC)
+        target_link_options(mbedtls-package-smoke PRIVATE /WX)
     endif()
 endif()
 

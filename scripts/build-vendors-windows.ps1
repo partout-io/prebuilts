@@ -42,9 +42,15 @@ switch ($Target) {
     }
 }
 
-if ($Vendor -in @("mbedtls", "wg-go")) {
+if ($Vendor -eq "wg-go") {
     if (-not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required for $Vendor" }
     if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required for $Vendor" }
+}
+if ($Vendor -in @("openssl", "mbedtls")) {
+    if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required for $Vendor" }
+    if ($runtimeLibrary -notin @("MultiThreaded", "MultiThreadedDLL", "MultiThreadedDebug", "MultiThreadedDebugDLL")) {
+        throw "Unsupported MSVC_RUNTIME_LIBRARY: $runtimeLibrary"
+    }
 }
 
 function Get-GitOutput {
@@ -75,7 +81,7 @@ function Join-CmdArguments {
 $visualStudioPath = ""
 $vcToolsVersion = ""
 $script:vcVarsAll = ""
-if ($Vendor -eq "openssl") {
+if ($Vendor -in @("openssl", "mbedtls")) {
     $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
     $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
     Assert-PathExists $vswhere
@@ -118,7 +124,6 @@ $wgGoDir = Join-Path $root "vendors\wg-go"
 
 switch ($Vendor) {
     "openssl" {
-        if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required for OpenSSL" }
         Assert-PathExists (Join-Path $opensslDir "Configure")
         $buildSource = Join-Path $workDir "openssl-source"
         Copy-SourceTree $opensslDir $buildSource
@@ -145,12 +150,6 @@ switch ($Vendor) {
             -r (Join-Path $mbedtlsDir "scripts\basic.requirements.txt") `
             -r (Join-Path $mbedtlsDir "tf-psa-crypto\scripts\basic.requirements.txt")
 
-        $cc = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
-        $ar = Join-Path $llvmMingwRoot "bin\llvm-ar.exe"
-        $ranlib = Join-Path $llvmMingwRoot "bin\llvm-ranlib.exe"
-        Assert-PathExists $cc
-        Assert-PathExists $ar
-        Assert-PathExists $ranlib
         if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) { throw "CMake is required for Mbed TLS" }
         if (-not (Get-Command ninja.exe -ErrorAction SilentlyContinue)) { throw "Ninja is required for Mbed TLS" }
         $cmakeArgs = @(
@@ -160,13 +159,9 @@ switch ($Vendor) {
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_INSTALL_PREFIX=$vendorRoot",
             "-DCMAKE_INSTALL_LIBDIR=lib",
-            "-DCMAKE_SYSTEM_NAME=Windows",
-            "-DCMAKE_SYSTEM_PROCESSOR=$arch",
-            "-DCMAKE_C_COMPILER=$cc",
-            "-DCMAKE_AR=$ar",
-            "-DCMAKE_RANLIB=$ranlib",
-            "-DCMAKE_C_FLAGS=-O2",
-            "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+            "-DCMAKE_C_COMPILER=cl.exe",
+            "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary",
             "-DPython3_EXECUTABLE=$python",
             "-DGEN_FILES=ON",
             "-DENABLE_PROGRAMS=OFF",
@@ -174,16 +169,17 @@ switch ($Vendor) {
             "-DUSE_SHARED_MBEDTLS_LIBRARY=OFF",
             "-DUSE_STATIC_MBEDTLS_LIBRARY=ON"
         )
-        & cmake @cmakeArgs
-        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake configure failed with exit code $LASTEXITCODE" }
-        & cmake --build $cmakeBuild --parallel $([Environment]::ProcessorCount)
-        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake build failed with exit code $LASTEXITCODE" }
-        & cmake --install $cmakeBuild
-        if ($LASTEXITCODE -ne 0) { throw "Mbed TLS CMake install failed with exit code $LASTEXITCODE" }
+        $configureCommand = "cmake " + (Join-CmdArguments $cmakeArgs)
+        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir -Command $configureCommand
+        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir `
+            -Command "cmake --build `"$cmakeBuild`" --parallel $([Environment]::ProcessorCount)"
+        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir `
+            -Command "cmake --install `"$cmakeBuild`""
 
-        Copy-Item (Join-Path $vendorRoot "lib\libmbedtls.a") (Join-Path $vendorRoot "lib\mbedtls.lib")
-        Copy-Item (Join-Path $vendorRoot "lib\libmbedx509.a") (Join-Path $vendorRoot "lib\mbedx509.lib")
-        Copy-Item (Join-Path $vendorRoot "lib\libmbedcrypto.a") (Join-Path $vendorRoot "lib\mbedcrypto.lib")
+        # Mbed TLS 4 retains the historical mbedcrypto name as a GNU-style alias.
+        # Give MSVC consumers the same compatibility library with its native suffix.
+        Copy-Item (Join-Path $vendorRoot "lib\tfpsacrypto.lib") (Join-Path $vendorRoot "lib\mbedcrypto.lib")
+        Remove-Item (Join-Path $vendorRoot "lib\libmbedcrypto.a") -Force -ErrorAction SilentlyContinue
     }
     "wg-go" {
         $cc = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
@@ -238,10 +234,14 @@ switch ($Vendor) {
     "mbedtls" {
         Assert-PathExists (Join-Path $vendorRoot "include")
         Assert-PathExists (Join-Path $vendorRoot "lib\cmake\MbedTLS\MbedTLSConfig.cmake")
-        Assert-PathExists (Join-Path $vendorRoot "lib\libtfpsacrypto.a")
+        Assert-PathExists (Join-Path $vendorRoot "lib\tfpsacrypto.lib")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedtls.lib")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedx509.lib")
         Assert-PathExists (Join-Path $vendorRoot "lib\mbedcrypto.lib")
+        $gnuArchives = @(Get-ChildItem (Join-Path $vendorRoot "lib") -Filter "*.a")
+        if ($gnuArchives.Count -ne 0) {
+            throw "Mbed TLS MSVC package unexpectedly contains GNU archives: $($gnuArchives.Name -join ', ')"
+        }
     }
     "wg-go" {
         Assert-PathExists (Join-Path $vendorRoot "include")
@@ -254,9 +254,28 @@ switch ($Vendor) {
 if ($Vendor -in @("mbedtls", "wg-go")) {
     $smokeBuild = Join-Path $workDir "cmake-package-smoke"
     $smokeOption = if ($Vendor -eq "mbedtls") { "-DTEST_MBEDTLS=ON" } else { "-DTEST_WGGO=ON" }
-    & cmake -S (Join-Path $root "tests\cmake-packages") -B $smokeBuild `
-        "-DCMAKE_PREFIX_PATH=$vendorRoot" $smokeOption
-    if ($LASTEXITCODE -ne 0) { throw "$Vendor CMake package smoke test failed with exit code $LASTEXITCODE" }
+    $smokeArgs = @(
+        "-S", (Join-Path $root "tests\cmake-packages"),
+        "-B", $smokeBuild,
+        "-DCMAKE_PREFIX_PATH=$vendorRoot",
+        $smokeOption
+    )
+    if ($Vendor -eq "mbedtls") {
+        $smokeArgs += @(
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCMAKE_C_COMPILER=cl.exe",
+            "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
+            "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary"
+        )
+        $smokeCommand = "cmake " + (Join-CmdArguments $smokeArgs)
+        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir -Command $smokeCommand
+        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir `
+            -Command "cmake --build `"$smokeBuild`" --parallel $([Environment]::ProcessorCount)"
+    } else {
+        & cmake @smokeArgs
+        if ($LASTEXITCODE -ne 0) { throw "$Vendor CMake package smoke test failed with exit code $LASTEXITCODE" }
+    }
 }
 
 $prebuiltsRemote = ((& git -C $root remote) | Select-Object -First 1) -as [string]
@@ -303,10 +322,13 @@ $makeVersion = ""
 $makeCommand = Get-Command make.exe -ErrorAction SilentlyContinue
 if ($makeCommand) { $makeVersion = ((& $makeCommand.Source --version) | Select-Object -First 1).Trim() }
 $clangVersion = ""
-if ($Vendor -in @("mbedtls", "wg-go")) {
+if ($Vendor -eq "wg-go") {
     $clang = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
     $clangVersion = ((& $clang --version) | Select-Object -First 1).Trim()
 }
+$compiler = if ($Vendor -in @("openssl", "mbedtls")) { "MSVC" } else { "llvm-mingw clang" }
+$manifestLlvmMingwVersion = if ($Vendor -eq "wg-go") { $llvmMingwVersion } else { "" }
+$manifestRuntimeLibrary = if ($Vendor -in @("openssl", "mbedtls")) { $runtimeLibrary } else { "" }
 $cmakeVersion = ""
 $ninjaVersion = ""
 if ($Vendor -in @("mbedtls", "wg-go")) {
@@ -328,11 +350,12 @@ $manifest = [ordered]@{
         cmake = $cmakeVersion
         ninja = $ninjaVersion
         make = $makeVersion
-        llvmMingw = $llvmMingwVersion
+        compiler = $compiler
+        llvmMingw = $manifestLlvmMingwVersion
         clang = $clangVersion
         visualStudio = $visualStudioPath
         vcTools = $vcToolsVersion
-        msvcRuntimeLibrary = $runtimeLibrary
+        msvcRuntimeLibrary = $manifestRuntimeLibrary
     }
 }
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $vendorRoot "manifest.json")

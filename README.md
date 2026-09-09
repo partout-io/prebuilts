@@ -62,6 +62,11 @@ Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. 
 
 Linux builds OpenSSL, Mbed TLS, and wg-go natively for `x64` and `arm64` in six separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL and wg-go are shared, while Mbed TLS is static.
 
+Windows Mbed TLS is built as native MSVC COFF static libraries for the selected
+`x64` or `arm64` target. Its runtime library is selected with
+`MSVC_RUNTIME_LIBRARY` (the CI default is `MultiThreadedDLL`, corresponding to
+`/MD`) so consumers do not mix CRT models.
+
 The Android, Linux, and Windows Mbed TLS packages retain the upstream CMake
 package metadata and expose `MbedTLS::mbedtls`, `MbedTLS::mbedx509`, and
 `MbedTLS::tfpsacrypto`. The wg-go packages include a relocatable `WgGo` config
