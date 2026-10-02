@@ -39,12 +39,10 @@ esac
 
 build_openssl=OFF
 build_mbedtls=OFF
-build_wg_go=OFF
 case "${vendor}" in
     all)
         build_openssl=ON
         build_mbedtls=ON
-        build_wg_go=ON
         ;;
     openssl)
         build_openssl=ON
@@ -52,19 +50,13 @@ case "${vendor}" in
     mbedtls)
         build_mbedtls=ON
         ;;
-    wg-go)
-        build_wg_go=ON
-        ;;
     *)
-        echo "Unknown Apple vendor: ${vendor}. Expected all, openssl, mbedtls, or wg-go." >&2
+        echo "Unknown Apple vendor: ${vendor}. Expected all, openssl or mbedtls." >&2
         exit 1
         ;;
 esac
 
-required_commands=(ditto git grep lipo make patch perl plutil python3 rsync swift xcodebuild xcrun)
-if [[ "${build_wg_go}" == ON ]]; then
-    required_commands+=(go)
-fi
+required_commands=(ditto git grep lipo make perl plutil python3 rsync swift xcodebuild xcrun)
 if [[ "${build_mbedtls}" == ON ]]; then
     required_commands+=(cmake)
 fi
@@ -103,7 +95,6 @@ set_slice_metadata() {
             slice_clang_target="arm64-apple-ios${ios_deployment_target}"
             slice_deployment_target="${ios_deployment_target}"
             slice_openssl_target="ios64-xcrun"
-            slice_goos="ios"
             ;;
         ios-simulator-arm64)
             slice_sdk="iphonesimulator"
@@ -112,7 +103,6 @@ set_slice_metadata() {
             slice_clang_target="arm64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
             slice_openssl_target="iossimulator-arm64-xcrun"
-            slice_goos="ios"
             ;;
         ios-simulator-x86_64)
             slice_sdk="iphonesimulator"
@@ -121,7 +111,6 @@ set_slice_metadata() {
             slice_clang_target="x86_64-apple-ios${ios_deployment_target}-simulator"
             slice_deployment_target="${ios_deployment_target}"
             slice_openssl_target="iossimulator-x86_64-xcrun"
-            slice_goos="ios"
             ;;
         macos-arm64)
             slice_sdk="macosx"
@@ -130,7 +119,6 @@ set_slice_metadata() {
             slice_clang_target="arm64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
             slice_openssl_target="darwin64-arm64"
-            slice_goos="darwin"
             ;;
         macos-x86_64)
             slice_sdk="macosx"
@@ -139,7 +127,6 @@ set_slice_metadata() {
             slice_clang_target="x86_64-apple-macos${macos_deployment_target}"
             slice_deployment_target="${macos_deployment_target}"
             slice_openssl_target="darwin64-x86_64"
-            slice_goos="darwin"
             ;;
         tvos-arm64)
             slice_sdk="appletvos"
@@ -148,7 +135,6 @@ set_slice_metadata() {
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}"
             slice_deployment_target="${tvos_deployment_target}"
             slice_openssl_target="darwin64-arm64"
-            slice_goos="ios"
             ;;
         tvos-simulator-arm64)
             slice_sdk="appletvsimulator"
@@ -157,7 +143,6 @@ set_slice_metadata() {
             slice_clang_target="arm64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
             slice_openssl_target="darwin64-arm64"
-            slice_goos="ios"
             ;;
         tvos-simulator-x86_64)
             slice_sdk="appletvsimulator"
@@ -166,7 +151,6 @@ set_slice_metadata() {
             slice_clang_target="x86_64-apple-tvos${tvos_deployment_target}-simulator"
             slice_deployment_target="${tvos_deployment_target}"
             slice_openssl_target="darwin64-x86_64"
-            slice_goos="ios"
             ;;
         *)
             echo "Unknown Apple slice: ${slice}" >&2
@@ -216,7 +200,6 @@ build_slice() {
     local apple_cflags
     local slice_ar
     local slice_ranlib
-    local slice_goarch
     local openssl_extra=()
 
     set_slice_metadata "${slice}"
@@ -224,11 +207,6 @@ build_slice() {
     apple_cflags="-O2 -isysroot ${slice_sdkroot} -target ${slice_clang_target}"
     slice_ar="$(xcrun --sdk "${slice_sdk}" --find ar)"
     slice_ranlib="$(xcrun --sdk "${slice_sdk}" --find ranlib)"
-    if [[ "${slice_arch}" == arm64 ]]; then
-        slice_goarch=arm64
-    else
-        slice_goarch=amd64
-    fi
     if [[ "${slice}" == tvos-* ]]; then
         openssl_extra=(-DHAVE_FORK=0 no-async)
     fi
@@ -268,14 +246,6 @@ build_slice() {
                 "${script_dir}/build-mbedtls.sh" \
                 "${vendor_dir}/mbedtls" "${build_dir}/mbedtls"
         fi
-        if [[ "${build_wg_go}" == ON ]]; then
-            make -C "${repository_dir}/vendors/wg-go" install \
-                "BUILDDIR=${build_dir}/wg-go" \
-                "DESTDIR=${vendor_dir}/wg-go" \
-                "TMPROOTDIR=${build_dir}/wg-go-goroot" \
-                APPLE=1 "GOARCH=${slice_goarch}" "GOOS=${slice_goos}" \
-                "SDKROOT=${slice_sdkroot}" "TARGET=${slice_clang_target}"
-        fi
     } > "${build_log}" 2>&1; then
         tail -n 300 "${build_log}" >&2
         exit 1
@@ -296,10 +266,6 @@ build_slice() {
             "${vendor_dir}/mbedtls/lib/libmbedtls.a" \
             "${vendor_dir}/mbedtls/lib/libmbedx509.a" \
             "${vendor_dir}/mbedtls/lib/libmbedcrypto.a"
-    fi
-    if [[ "${build_wg_go}" == ON ]]; then
-        [[ -f "${vendor_dir}/wg-go/lib/libwg-go.a" ]] || { echo "Missing libwg-go.a for ${slice}" >&2; exit 1; }
-        cp "${vendor_dir}/wg-go/lib/libwg-go.a" "${slice_dir}/libwg-go.a"
     fi
 }
 
@@ -404,20 +370,6 @@ prepare_common_headers() {
     fi
 }
 
-prepare_wg_go_headers() {
-    local group="${1}"
-    local first_slice
-    local headers_dir="${work_dir}/groups/${group}/headers/wg-go/wg_go"
-
-    first_slice="$(group_slices "${group}" | sed -n '1p')"
-    assert_common_headers wg-go "${group}"
-    mkdir -p "${headers_dir}"
-    rsync -a \
-        "${work_dir}/slices/${first_slice}/vendors/wg-go/include/wg_go/" \
-        "${headers_dir}/"
-    cp "${modulemaps_dir}/wg-go.modulemap" "${headers_dir}/module.modulemap"
-}
-
 for group in "${groups[@]}"; do
     if [[ "${build_openssl}" == ON ]]; then
         merge_group_library "${group}" libopenssl
@@ -426,10 +378,6 @@ for group in "${groups[@]}"; do
     if [[ "${build_mbedtls}" == ON ]]; then
         merge_group_library "${group}" libmbedtls
         prepare_common_headers mbedtls "${group}" mbedtls "${modulemaps_dir}/mbedtls.modulemap"
-    fi
-    if [[ "${build_wg_go}" == ON ]]; then
-        merge_group_library "${group}" libwg-go
-        prepare_wg_go_headers "${group}"
     fi
 done
 
@@ -482,9 +430,6 @@ fi
 if [[ "${build_mbedtls}" == ON ]]; then
     create_xcframework mbedtls libmbedtls mbedtls mbedtls
 fi
-if [[ "${build_wg_go}" == ON ]]; then
-    create_xcframework wg-go libwg-go wg-go wg_go
-fi
 
 prebuilts_remote="$(git -C "${repository_dir}" remote | sed -n '1p')"
 prebuilts_repository=""
@@ -502,15 +447,7 @@ if [[ "${build_mbedtls}" == ON ]]; then
     mbedtls_ref="$(git -C "${mbedtls_dir}" rev-parse HEAD)"
     mbedtls_version="$(git -C "${mbedtls_dir}" describe --tags --always --dirty)"
 fi
-if [[ "${build_wg_go}" == ON ]]; then
-    wg_go_dir="${repository_dir}/vendors/wg-go"
-    wireguard_go_version="$(awk '$1 == "golang.zx2c4.com/wireguard" && $2 !~ /\/go\.mod$/ { print $2; exit }' "${wg_go_dir}/go.sum")"
-fi
 xcode_version="$(xcodebuild -version | tr '\n' ' ' | sed 's/ *$//')"
-go_version=""
-if [[ "${build_wg_go}" == ON ]] && command -v go >/dev/null 2>&1; then
-    go_version="$(go env GOVERSION 2>/dev/null || go version)"
-fi
 make_version="$(make --version | sed -n '1p')"
 cmake_version=""
 if [[ "${build_mbedtls}" == ON ]]; then
@@ -542,10 +479,6 @@ manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
             "${library_separator}" "${mbedtls_version}" "${mbedtls_ref}"
         library_separator=$',\n'
     fi
-    if [[ "${build_wg_go}" == ON ]]; then
-        printf '%s    "wg-go": { "sourceRef": "%s", "wireguardGoVersion": "%s", "artifact": "wg-go.xcframework.zip" }' \
-            "${library_separator}" "${prebuilts_ref}" "${wireguard_go_version}"
-    fi
     printf '\n'
     printf '  },\n'
     printf '  "deploymentTargets": { "iOS": "%s", "macOS": "%s", "tvOS": "%s" },\n' "${ios_deployment_target}" "${macos_deployment_target}" "${tvos_deployment_target}"
@@ -556,8 +489,8 @@ manifest_path="${artifacts_dir}/${manifest_scope}-manifest.json"
         separator=", "
     done
     printf '],\n'
-    printf '  "toolchains": { "xcode": "%s", "go": "%s", "cmake": "%s", "make": "%s", "python": "%s" }\n' \
-        "${xcode_version}" "${go_version}" "${cmake_version}" "${make_version}" "${python_version}"
+    printf '  "toolchains": { "xcode": "%s", "cmake": "%s", "make": "%s", "python": "%s" }\n' \
+        "${xcode_version}" "${cmake_version}" "${make_version}" "${python_version}"
     printf '}\n'
 } > "${manifest_path}"
 

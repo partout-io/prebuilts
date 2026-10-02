@@ -4,7 +4,7 @@ param(
     [string]$Target,
 
     [Parameter(Mandatory = $true)]
-    [ValidateSet("openssl", "mbedtls", "wg-go")]
+    [ValidateSet("openssl", "mbedtls")]
     [string]$Vendor
 )
 
@@ -17,8 +17,6 @@ $workDir = Join-Path $root ".build\$Target\$Vendor"
 $installDir = Join-Path $workDir "install"
 $vendorRoot = Join-Path $installDir $Vendor
 $artifactsDir = Join-Path $root "artifacts"
-$llvmMingwVersion = $env:LLVM_MINGW_VERSION
-$llvmMingwRoot = $env:LLVM_MINGW_ROOT
 $runtimeLibrary = $env:MSVC_RUNTIME_LIBRARY
 
 switch ($Target) {
@@ -27,30 +25,18 @@ switch ($Target) {
         $vcVarsArch = "amd64"
         $opensslTarget = "VC-WIN64A"
         $opensslArch = "x64"
-        $goArch = "amd64"
-        $mingwTriple = "x86_64-w64-mingw32"
-        $dlltoolMachine = "i386:x86-64"
     }
     "windows-arm64" {
         $arch = "arm64"
         $vcVarsArch = "amd64_arm64"
         $opensslTarget = "VC-WIN64-ARM"
         $opensslArch = "arm64"
-        $goArch = "arm64"
-        $mingwTriple = "aarch64-w64-mingw32"
-        $dlltoolMachine = "arm64"
     }
 }
 
-if ($Vendor -eq "wg-go") {
-    if (-not $llvmMingwVersion) { throw "LLVM_MINGW_VERSION is required for $Vendor" }
-    if (-not $llvmMingwRoot) { throw "LLVM_MINGW_ROOT is required for $Vendor" }
-}
-if ($Vendor -in @("openssl", "mbedtls")) {
-    if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required for $Vendor" }
-    if ($runtimeLibrary -notin @("MultiThreaded", "MultiThreadedDLL", "MultiThreadedDebug", "MultiThreadedDebugDLL")) {
-        throw "Unsupported MSVC_RUNTIME_LIBRARY: $runtimeLibrary"
-    }
+if (-not $runtimeLibrary) { throw "MSVC_RUNTIME_LIBRARY is required for $Vendor" }
+if ($runtimeLibrary -notin @("MultiThreaded", "MultiThreadedDLL", "MultiThreadedDebug", "MultiThreadedDebugDLL")) {
+    throw "Unsupported MSVC_RUNTIME_LIBRARY: $runtimeLibrary"
 }
 
 function Get-GitOutput {
@@ -81,18 +67,16 @@ function Join-CmdArguments {
 $visualStudioPath = ""
 $vcToolsVersion = ""
 $script:vcVarsAll = ""
-if ($Vendor -in @("openssl", "mbedtls")) {
-    $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
-    $vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
-    Assert-PathExists $vswhere
-    $visualStudioPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
-    if (-not $visualStudioPath) { throw "Unable to locate Visual Studio with MSVC tools" }
-    $script:vcVarsAll = Join-Path $visualStudioPath "VC\Auxiliary\Build\vcvarsall.bat"
-    Assert-PathExists $script:vcVarsAll
-    $vcToolsVersionFile = Join-Path $visualStudioPath "VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt"
-    if (Test-Path $vcToolsVersionFile) {
-        $vcToolsVersion = (Get-Content -Raw $vcToolsVersionFile).Trim()
-    }
+$programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+$vswhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+Assert-PathExists $vswhere
+$visualStudioPath = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath).Trim()
+if (-not $visualStudioPath) { throw "Unable to locate Visual Studio with MSVC tools" }
+$script:vcVarsAll = Join-Path $visualStudioPath "VC\Auxiliary\Build\vcvarsall.bat"
+Assert-PathExists $script:vcVarsAll
+$vcToolsVersionFile = Join-Path $visualStudioPath "VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt"
+if (Test-Path $vcToolsVersionFile) {
+    $vcToolsVersion = (Get-Content -Raw $vcToolsVersionFile).Trim()
 }
 
 function Invoke-VcVarsCommand {
@@ -120,7 +104,6 @@ New-Item -ItemType Directory -Force $vendorRoot, $artifactsDir | Out-Null
 
 $opensslDir = Join-Path $root "vendors\openssl"
 $mbedtlsDir = Join-Path $root "vendors\mbedtls"
-$wgGoDir = Join-Path $root "vendors\wg-go"
 
 switch ($Vendor) {
     "openssl" {
@@ -181,46 +164,6 @@ switch ($Vendor) {
         Copy-Item (Join-Path $vendorRoot "lib\tfpsacrypto.lib") (Join-Path $vendorRoot "lib\mbedcrypto.lib")
         Remove-Item (Join-Path $vendorRoot "lib\libmbedcrypto.a") -Force -ErrorAction SilentlyContinue
     }
-    "wg-go" {
-        $cc = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
-        $cxx = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang++.exe"
-        $dlltool = Join-Path $llvmMingwRoot "bin\llvm-dlltool.exe"
-        Assert-PathExists $cc
-        Assert-PathExists $cxx
-        Assert-PathExists $dlltool
-        New-Item -ItemType Directory -Force (Join-Path $vendorRoot "include"), (Join-Path $vendorRoot "lib") | Out-Null
-        Copy-Item (Join-Path $wgGoDir "include\*") (Join-Path $vendorRoot "include") -Recurse -Force
-        New-Item -ItemType Directory -Force (Join-Path $vendorRoot "lib\cmake\WgGo") | Out-Null
-        Copy-Item (Join-Path $wgGoDir "cmake\*") (Join-Path $vendorRoot "lib\cmake\WgGo") -Force
-
-        $previousEnvironment = @{
-            CGO_ENABLED = $env:CGO_ENABLED; GOOS = $env:GOOS; GOARCH = $env:GOARCH;
-            CC = $env:CC; CXX = $env:CXX; CGO_CFLAGS = $env:CGO_CFLAGS;
-            CGO_CXXFLAGS = $env:CGO_CXXFLAGS
-        }
-        try {
-            $env:CGO_ENABLED = "1"
-            $env:GOOS = "windows"
-            $env:GOARCH = $goArch
-            $env:CC = $cc
-            $env:CXX = $cxx
-            $env:CGO_CFLAGS = "--target=$mingwTriple"
-            $env:CGO_CXXFLAGS = "--target=$mingwTriple"
-            & go build -C (Join-Path $wgGoDir "src") -ldflags=-w -trimpath -v `
-                -o (Join-Path $vendorRoot "lib\wg-go.dll") -buildmode=c-shared
-            if ($LASTEXITCODE -ne 0) { throw "wg-go build failed with exit code $LASTEXITCODE" }
-        } finally {
-            foreach ($entry in $previousEnvironment.GetEnumerator()) {
-                if ($null -eq $entry.Value) {
-                    Remove-Item -Path "env:$($entry.Key)" -ErrorAction SilentlyContinue
-                } else {
-                    Set-Item -Path "env:$($entry.Key)" -Value $entry.Value
-                }
-            }
-        }
-        & $dlltool -m $dlltoolMachine -d (Join-Path $wgGoDir "exports.def") -l (Join-Path $vendorRoot "lib\wg-go.lib")
-        if ($LASTEXITCODE -ne 0) { throw "llvm-dlltool failed with exit code $LASTEXITCODE" }
-    }
 }
 
 switch ($Vendor) {
@@ -243,39 +186,28 @@ switch ($Vendor) {
             throw "Mbed TLS MSVC package unexpectedly contains GNU archives: $($gnuArchives.Name -join ', ')"
         }
     }
-    "wg-go" {
-        Assert-PathExists (Join-Path $vendorRoot "include")
-        Assert-PathExists (Join-Path $vendorRoot "lib\cmake\WgGo\WgGoConfig.cmake")
-        Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.dll")
-        Assert-PathExists (Join-Path $vendorRoot "lib\wg-go.lib")
-    }
 }
 
-if ($Vendor -in @("mbedtls", "wg-go")) {
+if ($Vendor -eq "mbedtls") {
     $smokeBuild = Join-Path $workDir "cmake-package-smoke"
-    $smokeOption = if ($Vendor -eq "mbedtls") { "-DTEST_MBEDTLS=ON" } else { "-DTEST_WGGO=ON" }
+    $smokeOption = "-DTEST_MBEDTLS=ON"
     $smokeArgs = @(
         "-S", (Join-Path $root "tests\cmake-packages"),
         "-B", $smokeBuild,
         "-DCMAKE_PREFIX_PATH=$vendorRoot",
         $smokeOption
     )
-    if ($Vendor -eq "mbedtls") {
-        $smokeArgs += @(
-            "-G", "Ninja",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_C_COMPILER=cl.exe",
-            "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
-            "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary"
-        )
-        $smokeCommand = "cmake " + (Join-CmdArguments $smokeArgs)
-        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir -Command $smokeCommand
-        Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir `
-            -Command "cmake --build `"$smokeBuild`" --parallel $([Environment]::ProcessorCount)"
-    } else {
-        & cmake @smokeArgs
-        if ($LASTEXITCODE -ne 0) { throw "$Vendor CMake package smoke test failed with exit code $LASTEXITCODE" }
-    }
+    $smokeArgs += @(
+        "-G", "Ninja",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_C_COMPILER=cl.exe",
+        "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=$runtimeLibrary"
+    )
+    $smokeCommand = "cmake " + (Join-CmdArguments $smokeArgs)
+    Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir -Command $smokeCommand
+    Invoke-VcVarsCommand -Architecture $vcVarsArch -WorkingDirectory $workDir `
+        -Command "cmake --build `"$smokeBuild`" --parallel $([Environment]::ProcessorCount)"
 }
 
 $prebuiltsRemote = ((& git -C $root remote) | Select-Object -First 1) -as [string]
@@ -284,7 +216,6 @@ $prebuiltsRepository = if ($prebuiltsRemote) {
 } else { "" }
 $prebuiltsRef = Get-GitOutput -Arguments @("-C", $root, "rev-parse", "HEAD")
 $libraries = [ordered]@{}
-$goVersion = ""
 switch ($Vendor) {
     "openssl" {
         $libraries["openssl"] = [ordered]@{
@@ -300,38 +231,16 @@ switch ($Vendor) {
             linkage = "static"
         }
     }
-    "wg-go" {
-        $wireGuardGoVersion = ""
-        foreach ($line in Get-Content (Join-Path $wgGoDir "go.sum")) {
-            if ($line -match "^\s*golang\.zx2c4\.com/wireguard\s+(\S+)\s+" -and $Matches[1] -notlike "*/go.mod") {
-                $wireGuardGoVersion = $Matches[1]
-                break
-            }
-        }
-        if (-not $wireGuardGoVersion) { throw "Unable to resolve wireguard-go version" }
-        $goVersion = ((& go env GOVERSION) | Select-Object -First 1).Trim()
-        $libraries["wg-go"] = [ordered]@{
-            sourceRef = $prebuiltsRef
-            wireguardGoVersion = $wireGuardGoVersion
-            linkage = "shared"
-        }
-    }
 }
 
 $makeVersion = ""
 $makeCommand = Get-Command make.exe -ErrorAction SilentlyContinue
 if ($makeCommand) { $makeVersion = ((& $makeCommand.Source --version) | Select-Object -First 1).Trim() }
-$clangVersion = ""
-if ($Vendor -eq "wg-go") {
-    $clang = Join-Path $llvmMingwRoot "bin\$mingwTriple-clang.exe"
-    $clangVersion = ((& $clang --version) | Select-Object -First 1).Trim()
-}
-$compiler = if ($Vendor -in @("openssl", "mbedtls")) { "MSVC" } else { "llvm-mingw clang" }
-$manifestLlvmMingwVersion = if ($Vendor -eq "wg-go") { $llvmMingwVersion } else { "" }
-$manifestRuntimeLibrary = if ($Vendor -in @("openssl", "mbedtls")) { $runtimeLibrary } else { "" }
+$compiler = "MSVC"
+$manifestRuntimeLibrary = $runtimeLibrary
 $cmakeVersion = ""
 $ninjaVersion = ""
-if ($Vendor -in @("mbedtls", "wg-go")) {
+if ($Vendor -eq "mbedtls") {
     $cmakeVersion = ((& cmake --version) | Select-Object -First 1) -replace "^cmake version ", ""
 }
 if ($Vendor -eq "mbedtls") {
@@ -346,13 +255,10 @@ $manifest = [ordered]@{
     prebuilts = [ordered]@{ repository = $prebuiltsRepository; ref = $prebuiltsRef }
     libraries = $libraries
     toolchains = [ordered]@{
-        go = $goVersion
         cmake = $cmakeVersion
         ninja = $ninjaVersion
         make = $makeVersion
         compiler = $compiler
-        llvmMingw = $manifestLlvmMingwVersion
-        clang = $clangVersion
         visualStudio = $visualStudioPath
         vcTools = $vcToolsVersion
         msvcRuntimeLibrary = $manifestRuntimeLibrary

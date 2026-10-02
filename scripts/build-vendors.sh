@@ -44,10 +44,10 @@ case "${target}" in
 esac
 
 case "${vendor}" in
-    openssl|mbedtls|wg-go)
+    openssl|mbedtls)
         ;;
     *)
-        echo "Unknown vendor: ${vendor}. Expected openssl, mbedtls, or wg-go." >&2
+        echo "Unknown vendor: ${vendor}. Expected openssl or mbedtls." >&2
         exit 1
         ;;
 esac
@@ -58,9 +58,6 @@ case "${vendor}" in
         ;;
     mbedtls)
         required_commands+=(ar cc cmake python3 ranlib)
-        ;;
-    wg-go)
-        required_commands+=(cmake go)
         ;;
 esac
 for command_name in "${required_commands[@]}"; do
@@ -154,18 +151,6 @@ case "${vendor}" in
             "${script_dir}/build-mbedtls.sh" \
             "${vendor_dir}" "${work_dir}/mbedtls"
         ;;
-    wg-go)
-        make_args=(
-            -C "${repository_dir}/vendors/wg-go" install
-            "BUILDDIR=${work_dir}/wg-go-build"
-            "DESTDIR=${vendor_dir}"
-            "TMPROOTDIR=${work_dir}/wg-go-goroot"
-        )
-        if [[ "${os}" == android ]]; then
-            make_args+=(ANDROID=1 "CC=${android_clang}")
-        fi
-        make "${make_args[@]}"
-        ;;
 esac
 
 [[ -d "${vendor_dir}/include" ]] || { echo "Missing ${vendor} headers" >&2; exit 1; }
@@ -181,10 +166,6 @@ case "${vendor}" in
         [[ -f "${vendor_dir}/lib/libtfpsacrypto.a" ]] || { echo "Missing libtfpsacrypto.a" >&2; exit 1; }
         [[ -f "${vendor_dir}/lib/cmake/MbedTLS/MbedTLSConfig.cmake" ]] || { echo "Missing MbedTLSConfig.cmake" >&2; exit 1; }
         ;;
-    wg-go)
-        [[ -f "${vendor_dir}/lib/libwg-go.so" ]] || { echo "Missing libwg-go.so" >&2; exit 1; }
-        [[ -f "${vendor_dir}/lib/cmake/WgGo/WgGoConfig.cmake" ]] || { echo "Missing WgGoConfig.cmake" >&2; exit 1; }
-        ;;
 esac
 
 cmake_smoke_args=(
@@ -196,11 +177,8 @@ case "${vendor}" in
     mbedtls)
         cmake_smoke_args+=(-DTEST_MBEDTLS=ON)
         ;;
-    wg-go)
-        cmake_smoke_args+=(-DTEST_WGGO=ON)
-        ;;
 esac
-if [[ "${vendor}" == mbedtls || "${vendor}" == wg-go ]]; then
+if [[ "${vendor}" == mbedtls ]]; then
     cmake "${cmake_smoke_args[@]}"
 fi
 
@@ -210,7 +188,6 @@ if [[ -n "${prebuilts_remote}" ]]; then
     prebuilts_repository="$(git -C "${repository_dir}" remote get-url "${prebuilts_remote}")"
 fi
 prebuilts_ref="$(git -C "${repository_dir}" rev-parse HEAD)"
-go_version=""
 case "${vendor}" in
     openssl)
         source_dir="${repository_dir}/vendors/openssl"
@@ -224,12 +201,6 @@ case "${vendor}" in
         source_version="$(git -C "${source_dir}" describe --tags --always --dirty)"
         libraries_json="    \"mbedtls\": { \"version\": \"${source_version}\", \"ref\": \"${source_ref}\", \"linkage\": \"static\" }"
         ;;
-    wg-go)
-        wireguard_go_version="$(awk '$1 == "golang.zx2c4.com/wireguard" && $2 !~ /\/go\.mod$/ { print $2; exit }' "${repository_dir}/vendors/wg-go/go.sum")"
-        [[ -n "${wireguard_go_version}" ]] || { echo "Unable to resolve wireguard-go version" >&2; exit 1; }
-        go_version="$(go env GOVERSION 2>/dev/null || go version)"
-        libraries_json="    \"wg-go\": { \"sourceRef\": \"${prebuilts_ref}\", \"wireguardGoVersion\": \"${wireguard_go_version}\", \"linkage\": \"shared\" }"
-        ;;
 esac
 
 platform_toolchains=""
@@ -242,7 +213,7 @@ else
 fi
 make_version="$(make --version | sed -n '1p')"
 cmake_version=""
-if [[ "${vendor}" == mbedtls || "${vendor}" == wg-go ]]; then
+if [[ "${vendor}" == mbedtls ]]; then
     cmake_version="$(cmake --version | sed -n '1s/^cmake version //p')"
 fi
 
@@ -258,7 +229,6 @@ cat > "${vendor_dir}/manifest.json" <<EOF
 ${libraries_json}
   },
   "toolchains": {
-    "go": "${go_version}",
     "cmake": "${cmake_version}",
     "make": "${make_version}"${platform_toolchains}
   }

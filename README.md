@@ -4,14 +4,14 @@ This repository is the source of truth for third-party binary dependencies used 
 
 ## Vendor Builds
 
-The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS's CMake build, Go's build toolchain for wg-go, and `nmake` for wxWidgets. There is no repository-level meta-build system.
+The repository invokes each vendor's native build directly: OpenSSL `Configure`, Mbed TLS's CMake build, and `nmake` for wxWidgets. There is no repository-level meta-build system.
 
 Build scripts select one vendor and target at a time, matching the CI matrix:
 
 ```sh
 scripts/build-apple-xcframeworks.sh all openssl
 scripts/build-vendors.sh android-arm64-v8a mbedtls
-scripts/build-vendors.sh linux-x64 wg-go
+scripts/build-vendors.sh linux-x64 openssl
 ```
 
 Initialize the OpenSSL and Mbed TLS sources before building:
@@ -30,19 +30,19 @@ Consumers download the published vendor/platform archives independently. Partout
 
 All workflows are manual (`workflow_dispatch`) while the packaging format is settling. Build workflows upload GitHub Actions artifacts; the release workflow publishes those artifacts as release assets.
 
-The vendor workflow can build `all`, `openssl`, `mbedtls`, or `wg-go`. Selecting one vendor rebuilds it for every platform it supports. Every matrix entry emits a release-ready vendor/platform artifact; `all` only selects the complete matrix.
+The vendor workflow can build `all`, `openssl`, or `mbedtls`. Selecting one vendor rebuilds it for every platform it supports. Every matrix entry emits a release-ready vendor/platform artifact; `all` only selects the complete matrix.
 
 The release workflow defaults to the latest successful `all` run. Pass a specific vendor workflow run ID to publish or replace only that run's vendor artifacts.
 
 ### Apple XCFrameworks
 
-The Apple matrix builds OpenSSL, Mbed TLS, and wg-go in separate parallel jobs. Each job produces one static XCFramework containing slices for:
+The Apple matrix builds OpenSSL and Mbed TLS in separate parallel jobs. Each job produces one static XCFramework containing slices for:
 
 - iOS device (`arm64`) and simulator (`arm64`, `x86_64`)
 - macOS (`arm64`, `x86_64`)
 - tvOS device (`arm64`) and simulator (`arm64`, `x86_64`)
 
-OpenSSL's `libssl.a` and `libcrypto.a` are consolidated into one archive per slice. Mbed TLS's `libmbedtls.a`, `libmbedx509.a`, and `libmbedcrypto.a` are consolidated similarly. wg-go uses Go's `c-archive` mode. No dynamic library is included in an Apple XCFramework.
+OpenSSL's `libssl.a` and `libcrypto.a` are consolidated into one archive per slice. Mbed TLS's `libmbedtls.a`, `libmbedx509.a`, and `libmbedcrypto.a` are consolidated similarly. No dynamic library is included in an Apple XCFramework.
 
 Each job emits a zipped SwiftPM-compatible XCFramework, a `.checksum` sidecar, and vendor metadata for release aggregation. Build all Apple vendors locally with:
 
@@ -58,9 +58,9 @@ scripts/build-apple-xcframeworks.sh all openssl
 
 ### Android, Linux, and Windows
 
-Android `arm64-v8a` builds OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Windows `x64` and `arm64` each build OpenSSL, Mbed TLS, and wg-go in three parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `wg-go-windows-arm64.zip`.
+Android `arm64-v8a` builds OpenSSL and Mbed TLS in two parallel jobs. Windows `x64` and `arm64` each build OpenSSL and Mbed TLS in two parallel jobs. Every build job configures and packages only its selected vendor, producing names such as `openssl-android-arm64-v8a.tar.gz` and `mbedtls-windows-arm64.zip`.
 
-Linux builds OpenSSL, Mbed TLS, and wg-go natively for `x64` and `arm64` in six separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL and wg-go are shared, while Mbed TLS is static.
+Linux builds OpenSSL and Mbed TLS natively for `x64` and `arm64` in four separate jobs. Each package contains that vendor's libraries, public headers, and manifest for its architecture; OpenSSL is shared, while Mbed TLS is static.
 
 Windows Mbed TLS is built as native MSVC COFF static libraries for the selected
 `x64` or `arm64` target. Its runtime library is selected with
@@ -69,20 +69,19 @@ Windows Mbed TLS is built as native MSVC COFF static libraries for the selected
 
 The Android, Linux, and Windows Mbed TLS packages retain the upstream CMake
 package metadata and expose `MbedTLS::mbedtls`, `MbedTLS::mbedx509`, and
-`MbedTLS::tfpsacrypto`. The wg-go packages include a relocatable `WgGo` config
-package exposing `WgGo::wg-go`. Consumers can discover either package by adding
+`MbedTLS::tfpsacrypto`. Consumers can discover the package by adding
 the extracted prebuilt root to `CMAKE_PREFIX_PATH`.
 
 The local scripts take the same vendor selection as CI, for example:
 
 ```sh
 scripts/build-vendors.sh android-arm64-v8a openssl
-scripts/build-vendors.sh linux-x64 wg-go
+scripts/build-vendors.sh linux-x64 openssl
 scripts/build-vendors-windows.ps1 -Target windows-x64 -Vendor mbedtls
 ```
 
 ## Version Pins
 
-The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. wg-go and its Go module lock files are tracked directly in this repository. Toolchain versions are pinned by the build scripts and workflow files.
+The `vendors/openssl` and `vendors/mbedtls` submodules pin their upstream revisions. Toolchain versions are pinned by the build scripts and workflow files.
 
-Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple builds emit equivalent vendor-specific metadata. The release workflow attaches one `manifest.json` that aggregates the metadata for every published OpenSSL, Mbed TLS, wg-go, and wxWidgets artifact; intermediate manifests are not published separately.
+Every Android, Linux, and Windows package includes a manifest containing its exact source revisions, target, linkage, and toolchain metadata. Apple builds emit equivalent vendor-specific metadata. The release workflow attaches one `manifest.json` that aggregates the metadata for every published OpenSSL, Mbed TLS, and wxWidgets artifact; intermediate manifests are not published separately.
