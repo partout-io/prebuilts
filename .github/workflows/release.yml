@@ -45,16 +45,21 @@ jobs:
 
           vendors_run_id="${VENDOR_PREBUILTS_RUN_ID}"
           if [ -z "${vendors_run_id}" ]; then
+            # Filter success locally; the status-filtered API omitted recent runs.
             vendors_run_id="$(
-              gh run list --workflow partout-vendors.yml --status success --limit 100 \
-                --json databaseId,displayTitle \
-                --jq 'map(select(.displayTitle == "Vendor Prebuilts (all)")) | .[0].databaseId'
+              gh run list --workflow partout-vendors.yml --limit 100 \
+                --json databaseId,displayTitle,conclusion,createdAt \
+                --jq 'map(select(.conclusion == "success" and .displayTitle == "Vendor Prebuilts (all)")) | max_by(.createdAt) | .databaseId'
             )"
           fi
 
           windows_run_id="${WINDOWS_WXWIDGETS_RUN_ID}"
           if [ -z "${windows_run_id}" ]; then
-            windows_run_id="$(gh run list --workflow windows-wxwidgets.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            windows_run_id="$(
+              gh run list --workflow windows-wxwidgets.yml --limit 100 \
+                --json databaseId,conclusion,createdAt \
+                --jq 'map(select(.conclusion == "success")) | max_by(.createdAt) | .databaseId'
+            )"
           fi
 
           if [ -z "${vendors_run_id}" ] || [ "${vendors_run_id}" = "null" ]; then

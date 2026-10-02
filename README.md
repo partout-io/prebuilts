@@ -32,7 +32,10 @@ All workflows are manual (`workflow_dispatch`) while the packaging format is set
 
 The vendor workflow can build `all`, `openssl`, or `mbedtls`. Selecting one vendor rebuilds it for every platform it supports. Every matrix entry emits a release-ready vendor/platform artifact; `all` only selects the complete matrix.
 
-The release workflow defaults to the latest successful `all` run. Pass a specific vendor workflow run ID to publish or replace only that run's vendor artifacts.
+The release workflow selects the latest successful `all` run by creation time
+from the 100 most recent vendor runs. Windows wxWidgets is selected independently
+in the same way. Pass a specific vendor workflow run ID to publish or replace
+only that run's vendor artifacts.
 
 Release downloads select only OpenSSL and Mbed TLS vendor artifacts and Windows
 wxWidgets artifacts, including when reusing older build runs. Uploading to an
