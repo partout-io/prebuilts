@@ -34,6 +34,10 @@ The vendor workflow can build `all`, `openssl`, or `mbedtls`. Selecting one vend
 
 The release workflow defaults to the latest successful `all` run. Pass a specific vendor workflow run ID to publish or replace only that run's vendor artifacts.
 
+Release downloads select only OpenSSL and Mbed TLS vendor artifacts and Windows
+wxWidgets artifacts, including when reusing older build runs. Uploading to an
+existing release replaces matching assets but does not remove older assets.
+
 ### Apple XCFrameworks
 
 The Apple matrix builds OpenSSL and Mbed TLS in separate parallel jobs. Each job produces one static XCFramework containing slices for:

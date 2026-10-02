@@ -78,8 +78,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets/vendor-prebuilts release-assets/windows-wxwidgets
-          gh run download "${VENDORS_RUN_ID}" --dir release-assets/vendor-prebuilts
-          gh run download "${WINDOWS_RUN_ID}" --dir release-assets/windows-wxwidgets
+          # Historical build runs can contain vendors no longer distributed here.
+          gh run download "${VENDORS_RUN_ID}" --pattern 'openssl-*' --pattern 'mbedtls-*' \
+            --dir release-assets/vendor-prebuilts
+          gh run download "${WINDOWS_RUN_ID}" --pattern 'wxwidgets-windows-*' \
+            --dir release-assets/windows-wxwidgets
 
           find release-assets -type f -print | sort
 
