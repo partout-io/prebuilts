@@ -75,7 +75,10 @@ $mswBuildDir = Join-Path $sourceDir "build\msw"
 $nmakeArgs = @(
     "/NOLOGO", "/f", "makefile.vc",
     "BUILD=release", "SHARED=0", "RUNTIME_LIBS=$runtimeLibs",
-    "TARGET_CPU=$targetCpu", "USE_WEBVIEW=0", "USE_PRECOMP=0"
+    "TARGET_CPU=$targetCpu", "USE_PRECOMP=0",
+    "USE_AUI=0", "USE_HTML=0", "USE_MEDIA=0", "USE_OPENGL=0",
+    "USE_PROPGRID=0", "USE_RIBBON=0", "USE_RICHTEXT=0", "USE_STC=0",
+    "USE_WEBVIEW=0", "USE_XRC=0"
 ) -join " "
 $cmdLine = "call `"$vcVarsAll`" $vcVarsArch && cd /d `"$mswBuildDir`" && nmake $nmakeArgs"
 & cmd.exe /d /s /c $cmdLine
@@ -113,7 +116,10 @@ $manifest = [ordered]@{
             buildSystem = "makefile.vc"
             targetCpu = $targetCpu
             vcArch = $Arch
-            disabledFeatures = @("webview", "libwebp")
+            disabledFeatures = @(
+                "aui", "html", "media", "opengl", "propgrid", "ribbon",
+                "richtext", "stc", "webview", "xrc", "libwebp"
+            )
         }
     }
     toolchains = [ordered]@{
